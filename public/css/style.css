@@ -16,6 +16,8 @@
 	--radius-card: 12px;
 	--radius-btn: 8px;
 	--shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+	--shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.15);
+	--label-on-accent: #FFFFFF;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -34,6 +36,7 @@
 		--danger: #FF453A;
 		--header-bg: rgba(0, 0, 0, 0.72);
 		--shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 1px rgba(0, 0, 0, 0.2);
+		--shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.4);
 	}
 }
 
@@ -201,7 +204,7 @@ a:hover {
 }
 
 .session-card:hover {
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	box-shadow: var(--shadow-hover);
 	text-decoration: none;
 }
 
@@ -339,7 +342,7 @@ a:hover {
 
 /* Exercise cards in exercises-list are clickable <a> tags */
 a.exercise-card:hover {
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	box-shadow: var(--shadow-hover);
 	text-decoration: none;
 }
 
@@ -528,7 +531,7 @@ a.exercise-card:active {
 .tab.active,
 .period-btn.active {
 	background: var(--accent);
-	color: #ffffff;
+	color: var(--label-on-accent);
 	border-color: var(--accent);
 	font-weight: 600;
 }
@@ -679,5 +682,10 @@ a.exercise-card:active {
 	*::after {
 		animation-duration: 0.01ms !important;
 		transition-duration: 0.01ms !important;
+	}
+
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation-duration: 0.01ms !important;
 	}
 }
