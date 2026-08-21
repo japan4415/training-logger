@@ -4,9 +4,9 @@
 
 本プロジェクトは 3 つの Phase で段階的に構築する。各 Phase の Issue は依存関係に従って順に実装し、依存のない Issue は並列に進めることができる。
 
-各 Issue は本ファイルの記述を正として GitHub に起票される。Issue 本文中の依存参照（「Issue N（タイトル）」形式）は、GitHub 起票時に実際の Issue 番号に置換する。GitHub へ起票する際は各 issue 本文の `####` 見出しを `##` に変換する。
+各 Issue は本ファイルの記述を正として GitHub に起票された。Issue 本文中の依存参照（「Issue N（タイトル）」形式）は、GitHub 起票時に実際の Issue 番号に置換されている。
 
-Issue 11 完了までは CI が存在しないため、PR は手元で `pnpm run typecheck` / `lint` / `test` を実行して確認したうえで merge する。
+> **現在の進捗**: Phase 1・Phase 2 は全 Issue 完了。Phase 3 は Issue 11（CI/CD）・Issue 12（初回デプロイ）が完了、Issue 13（E2E 検証）が一部完了、Issue 14（ドキュメント最終化）が対応中。
 
 - **Phase 1** -- 基盤構築: プロジェクト初期化からデータモデル、MCP ツール全6種の実装まで
 - **Phase 2** -- Web UI: REST API と 4 画面の SSR 実装
@@ -16,20 +16,20 @@ Issue 11 完了までは CI が存在しないため、PR は手元で `pnpm run
 
 ```mermaid
 graph LR
-    I1[Issue 1: スキャフォールディング]
-    I2[Issue 2: D1 スキーマ]
-    I3[Issue 3: データアクセス層]
-    I4[Issue 4: MCP エンドポイント基盤]
-    I5[Issue 5: MCP 種目検索・登録]
-    I6[Issue 6: MCP ワークアウト記録]
-    I7[Issue 7: MCP 履歴照会]
-    I8[Issue 8: REST API]
-    I9[Issue 9: Web UI セッション]
-    I10[Issue 10: Web UI 種目進捗]
-    I11[Issue 11: CI/CD]
-    I12[Issue 12: 初回デプロイ<br/>一部完了済み]
-    I13[Issue 13: E2E 検証]
-    I14[Issue 14: ドキュメント最終化]
+    I1[Issue 1: スキャフォールディング<br/>完了]
+    I2[Issue 2: D1 スキーマ<br/>完了]
+    I3[Issue 3: データアクセス層<br/>完了]
+    I4[Issue 4: MCP エンドポイント基盤<br/>完了]
+    I5[Issue 5: MCP 種目検索・登録<br/>完了]
+    I6[Issue 6: MCP ワークアウト記録<br/>完了]
+    I7[Issue 7: MCP 履歴照会<br/>完了]
+    I8[Issue 8: REST API<br/>完了]
+    I9[Issue 9: Web UI セッション<br/>完了]
+    I10[Issue 10: Web UI 種目進捗<br/>完了]
+    I11[Issue 11: CI/CD<br/>完了]
+    I12[Issue 12: 初回デプロイ<br/>完了]
+    I13[Issue 13: E2E 検証<br/>一部完了]
+    I14[Issue 14: ドキュメント最終化<br/>対応中]
 
     I1 --> I2
     I1 --> I4
@@ -68,7 +68,7 @@ graph LR
 
 ## Phase 1: 基盤構築
 
-### Issue 1: プロジェクトスキャフォールディング
+### Issue 1: プロジェクトスキャフォールディング -- 完了 (GitHub Issue #2)
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
@@ -113,7 +113,7 @@ graph LR
 
 ---
 
-### Issue 2: D1 スキーマとマイグレーション
+### Issue 2: D1 スキーマとマイグレーション -- 完了 (GitHub Issue #3)
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
@@ -147,7 +147,7 @@ graph LR
 
 ---
 
-### Issue 3: データアクセス層の実装
+### Issue 3: データアクセス層の実装 -- 完了 (GitHub Issue #4)
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
@@ -197,7 +197,7 @@ MCP ツールと REST API が共用するデータアクセス関数を実装す
 
 ---
 
-### Issue 4: MCP エンドポイント基盤
+### Issue 4: MCP エンドポイント基盤 -- 完了 (GitHub Issue #5)
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
@@ -236,7 +236,7 @@ ChatGPT / claude.ai からの接続口となる MCP エンドポイントを構�
 
 ---
 
-### Issue 5: MCP ツール - 種目検索・登録
+### Issue 5: MCP ツール - 種目検索・登録 -- 完了 (GitHub Issue #6)
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
@@ -275,7 +275,7 @@ MCP 経由で種目の検索と新規登録を行うツールを実装する。
 
 ---
 
-### Issue 6: MCP ツール - ワークアウト記録（log/update/delete）
+### Issue 6: MCP ツール - ワークアウト記録（log/update/delete） -- 完了 (GitHub Issue #7)
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
@@ -323,7 +323,7 @@ MCP 経由で種目の検索と新規登録を行うツールを実装する。
 
 ---
 
-### Issue 7: MCP ツール - 履歴照会
+### Issue 7: MCP ツール - 履歴照会 -- 完了 (GitHub Issue #8)
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
@@ -361,7 +361,7 @@ MCP 経由で種目の検索と新規登録を行うツールを実装する。
 
 ## Phase 2: Web UI
 
-### Issue 8: REST API の実装
+### Issue 8: REST API の実装 -- 完了 (GitHub Issue #9)
 
 **Phase**: 2 / **ラベル**: `phase-2`
 
@@ -400,7 +400,7 @@ Web UI が使用する REST API エンドポイントを実装する。データ
 
 ---
 
-### Issue 9: Web UI - セッション一覧・詳細
+### Issue 9: Web UI - セッション一覧・詳細 -- 完了 (GitHub Issue #10)
 
 **Phase**: 2 / **ラベル**: `phase-2`
 
@@ -440,7 +440,7 @@ Web UI のメイン画面であるセッション一覧と詳細ページを実�
 
 ---
 
-### Issue 10: Web UI - 種目別進捗・種目一覧
+### Issue 10: Web UI - 種目別進捗・種目一覧 -- 完了 (GitHub Issue #11)
 
 **Phase**: 2 / **ラベル**: `phase-2`
 
@@ -479,26 +479,20 @@ Web UI のメイン画面であるセッション一覧と詳細ページを実�
 
 ## Phase 3: 運用基盤
 
-### Issue 11: CI/CD パイプライン
+### Issue 11: CI/CD パイプライン -- 完了 (GitHub Issue #12)
 
 **Phase**: 3 / **ラベル**: `phase-3`
 
 #### 背景
 
-GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェックと main マージ時の自動デプロイを実現する。
+GitHub Actions で CI パイプラインを構築し、PR 時の自動チェックを実現する。CD は Cloudflare Workers Builds（Git 連携）で main マージ時の自動デプロイを実現する。
 
 #### スコープ
 
-- [ ] `.github/workflows/ci.yml`（PR 時: typecheck + lint + D1 マイグレーション検証（`pnpm exec wrangler d1 migrations apply training-logger-db --local`）+ test）
-- [ ] `.github/workflows/deploy.yml`（main push 時: チェック → `d1 migrations apply --remote` → `wrangler deploy`、`cloudflare/wrangler-action@v3` 使用）
-- [ ] `.github/ISSUE_TEMPLATE/feature-request.md`（[docs/development.md](./development.md) の Issue 記述規約に準拠）
+- [x] `.github/workflows/ci.yml`（PR 時: typecheck + lint + D1 マイグレーション検証（`pnpm exec wrangler d1 migrations apply training-logger-db --local`）+ test）
+- [x] Cloudflare Workers Builds（Git 連携）による自動デプロイ（`deploy.yml` は不使用。Cloudflare ダッシュボードで GitHub リポジトリを連携）
 
-> **ユーザー操作**: GitHub リポジトリの Settings > Secrets and variables > Actions に以下を設定する:
->
-> - `CLOUDFLARE_API_TOKEN`
-> - `CLOUDFLARE_ACCOUNT_ID`
->
-> 設定手順は PR 説明に記載する。
+> **実装メモ**: 当初は `deploy.yml`（`cloudflare/wrangler-action@v3`）による GitHub Actions デプロイを計画していたが、Cloudflare Workers Builds（Git 連携）に一本化した。GitHub Actions は CI（PR チェック）のみを担当する。
 
 #### 非スコープ
 
@@ -506,9 +500,8 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 
 #### 受け入れ条件
 
-- [ ] PR 作成時に CI が自動実行され、全チェックが通過する
-- [ ] main マージ時に自動デプロイが実行される（Secrets 設定後）
-- [ ] Issue テンプレートが機能する
+- [x] PR 作成時に CI が自動実行され、全チェックが通過する
+- [x] main マージ時に自動デプロイが実行される（Cloudflare Workers Builds）
 
 #### 参照
 
@@ -518,11 +511,11 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 
 ---
 
-### Issue 12: 初回デプロイ
+### Issue 12: 初回デプロイ -- 完了 (GitHub Issue #13)
 
 **Phase**: 3 / **ラベル**: `phase-3`
 
-> **注記**: D1 データベースの作成と初回デプロイは PR #19 で完了済み。残作業はマイグレーション適用と疎通確認のみ。
+> **注記**: D1 データベースの作成と初回デプロイは PR #19 で完了済み。カスタムドメイン (`training-logger.discord.jp`) の設定、Observability (Workers Logs / Workers Traces) の有効化も完了。
 
 #### 背景
 
@@ -531,9 +524,11 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 #### スコープ
 
 - [x] `wrangler d1 create training-logger-db` → `database_id` を `wrangler.jsonc` に反映（完了済み）
-- [ ] `wrangler d1 migrations apply training-logger-db --remote`
+- [x] `wrangler d1 migrations apply training-logger-db --remote`（完了済み）
 - [x] `wrangler deploy`（完了済み）
-- [ ] 疎通確認一式
+- [x] カスタムドメイン `training-logger.discord.jp` の設定（GitHub Issue #26 で完了）
+- [x] Observability (Workers Logs + Workers Traces) の有効化（GitHub Issue #21 で完了）
+- [x] 疎通確認一式（完了済み）
 
 #### 非スコープ
 
@@ -542,9 +537,9 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 
 #### 受け入れ条件
 
-- [ ] `GET /health` が 200 を返す
-- [ ] `POST /mcp` で MCP `initialize` が成功する
-- [ ] ブラウザで `/` にアクセスすると Web UI が表示される
+- [x] `GET /health` が 200 を返す
+- [x] `POST /mcp` で MCP `initialize` が成功する
+- [x] ブラウザで `/` にアクセスすると Web UI が表示される
 
 #### 参照
 
@@ -553,7 +548,7 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 
 ---
 
-### Issue 13: E2E 検証 - 手書きノート実データ投入
+### Issue 13: E2E 検証 - 手書きノート実データ投入 -- 一部完了 (GitHub Issue #14)
 
 **Phase**: 3 / **ラベル**: `phase-3`
 
@@ -590,7 +585,7 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 
 ---
 
-### Issue 14: ドキュメントの実装追従・最終化
+### Issue 14: ドキュメントの実装追従・最終化 -- 対応中 (GitHub Issue #15)
 
 **Phase**: 3 / **ラベル**: `phase-3`
 

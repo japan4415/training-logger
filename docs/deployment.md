@@ -15,6 +15,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
   "routes": [
     {
       "pattern": "training-logger.discord.jp",
@@ -81,9 +82,11 @@ wrangler deploy
 
 ## CI/CD
 
-GitHub Actions で CI（PR 時）と CD（main push 時）を構成する。
+CI は GitHub Actions、CD は Cloudflare Workers Builds（Git 連携）で構成する。
 
-### ci.yml（PR 時）
+### CI: ci.yml（PR 時）
+
+GitHub Actions で PR 時に typecheck / lint / D1 マイグレーション検証 / test を実行する。
 
 ```yaml
 name: CI
@@ -91,6 +94,9 @@ name: CI
 on:
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   check:
@@ -117,55 +123,11 @@ jobs:
       - run: pnpm run test
 ```
 
-### deploy.yml（main push 時）
+### CD: Cloudflare Workers Builds（main push 時）
 
-```yaml
-name: Deploy
+Cloudflare Workers Builds（Git 連携）により、`main` ブランチへの push 時に自動デプロイが実行される。GitHub Actions の `deploy.yml` は使用しない。
 
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm run typecheck
-
-      - run: pnpm run lint
-
-      - run: pnpm run test
-
-      - name: Apply D1 migrations
-        uses: cloudflare/wrangler-action@v3
-        with:
-          command: d1 migrations apply training-logger-db --remote
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          command: deploy
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-```
-
-> **ユーザー操作**: GitHub リポジトリの Settings > Secrets and variables > Actions に以下を設定する:
->
-> - `CLOUDFLARE_API_TOKEN`: Cloudflare API トークン（Workers と D1 の権限）
-> - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare アカウント ID
+Cloudflare ダッシュボードで GitHub リポジトリを連携すると、`main` への push を検知して自動的にビルド・デプロイが行われる。D1 マイグレーションの適用も Workers Builds のビルドコマンドに含まれる。
 
 ## バックアップ
 
