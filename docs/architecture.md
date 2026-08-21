@@ -13,7 +13,6 @@
 | MCP SDK | `@modelcontextprotocol/sdk` v1.30.x (stable) | `McpServer` + `registerTool` + Zod でツール定義 |
 | MCP トランスポート | Streamable HTTP（ステートレス） | Hono ミドルウェアとして実装 |
 | MCP プロトコルバージョン | `2025-11-25`（現行安定版） | `2026-07-28` RC の stable 化後に移行検討 |
-| Web UI 保護 | Cloudflare Access (Zero Trust) | 無料枠 50 シート |
 | 言語 | TypeScript (strict) | |
 | パッケージマネージャ | pnpm | Renovate（リポジトリで有効化済み）と相性良好 |
 | ビルド | wrangler (esbuild 内蔵) | |
@@ -47,11 +46,9 @@ graph TB
     end
 
     subgraph Cloudflare
-        Access["Cloudflare Access<br/>(メール認証)"]
-
         subgraph Worker["Cloudflare Worker: training-logger"]
             HonoApp["Hono App"]
-            MCP["MCP Handler<br/>POST /mcp/SECRET"]
+            MCP["MCP Handler<br/>POST /mcp"]
             REST["REST API<br/>GET /api/*"]
             SSR["SSR<br/>Hono JSX"]
             Assets["Workers Assets<br/>/css/* /js/*"]
@@ -60,15 +57,12 @@ graph TB
         D1["D1: training-logger-db"]
     end
 
-    GitHub["GitHub Issues API<br/>repos/japan4415/training-logger"]
-
     ChatGPT -->|"Streamable HTTP"| MCP
     ClaudeAI -->|"Streamable HTTP"| MCP
     ClaudeDesktop -->|"Streamable HTTP"| MCP
 
-    Browser --> Access
-    Access --> SSR
-    Access --> REST
+    Browser --> SSR
+    Browser --> REST
 
     HonoApp --- MCP
     HonoApp --- REST
@@ -78,46 +72,14 @@ graph TB
     MCP --> D1
     REST --> D1
     SSR --> D1
-
-    MCP -->|"create_feedback"| GitHub
 ```
 
 単一の Cloudflare Worker 内で Hono が以下の 4 つの役割を統合する:
 
-- **MCP Handler**: `POST /mcp/{MCP_SECRET}` で MCP クライアントからのリクエストを処理
+- **MCP Handler**: `POST /mcp` で MCP クライアントからのリクエストを処理
 - **REST API**: `GET /api/*` で Web UI 向けのデータ取得エンドポイントを提供（読み取り専用）
 - **SSR**: Hono JSX でサーバサイドレンダリング。`/` をルートとしてページを配信
 - **Workers Assets**: `public/` ディレクトリの静的ファイルをサイトルートで配信（例: `/css/style.css`, `/js/chart-init.js`）
-
-## 認証設計
-
-### フェーズ 1（初期リリース）: シークレットパス方式
-
-| リソース | 保護方式 |
-|---|---|
-| `POST /mcp/{MCP_SECRET}` | シークレットパス（Access は Bypass ポリシー） |
-| `/`, `/api/*` | Cloudflare Access（Email 許可リスト） |
-| `/css/*`, `/js/*`（静的） | 公開 |
-| GitHub API 呼び出し | PAT（Workers Secrets `GITHUB_TOKEN`） |
-
-**MCP エンドポイント**:
-
-- `MCP_SECRET` は Workers Secrets で管理する推測不能な文字列
-- ChatGPT / claude.ai には「認証なし (no-auth)」モードで URL ごと登録
-- 不正な secret には **404** を返す（403 でなく 404 でエンドポイントの存在を隠す）
-- GET リクエストには **405** を返す
-- 漏洩時は Secret ローテーションで即無効化
-
-**根拠**: 個人利用で OAuth 2.1 IdP を構築するのは過剰。HTTPS + 推測不能 URL で実用上十分。
-
-**Cloudflare Access の構成**:
-
-Access アプリケーションを 2 つ作成する:
-
-1. `/mcp/*` に **Bypass** ポリシー: MCP クライアントは Access 認証を通過できないため
-2. それ以外（`/`, `/api/*`）に **Email 許可リスト** ポリシー: 個人のメールアドレスのみ許可
-
-**将来パス**: `@cloudflare/workers-oauth-provider` による OAuth 2.1 (PKCE + CIMD) 化を Phase 3 以降に位置づけ。
 
 ## リクエストフロー
 
@@ -133,7 +95,7 @@ sequenceDiagram
     participant D1 as D1 Database
 
     User->>LLM: 今日はシーテッドロウ 16kg 15回2セット
-    LLM->>Worker: POST /mcp/{secret}<br/>tool: log_workout
+    LLM->>Worker: POST /mcp<br/>tool: log_workout
     Worker->>D1: SELECT FROM exercises / exercise_aliases<br/>(種目解決、未登録なら INSERT)
     Worker->>D1: INSERT INTO workout_sessions<br/>(日付で upsert)
     Worker->>D1: INSERT INTO session_exercises, sets
@@ -147,38 +109,16 @@ sequenceDiagram
 sequenceDiagram
     actor User as ユーザー
     participant Browser as ブラウザ
-    participant Access as Cloudflare Access
     participant Worker as Cloudflare Worker
     participant D1 as D1 Database
 
     User->>Browser: / にアクセス
-    Browser->>Access: リクエスト
-    Access->>Access: メール認証
-    Access->>Worker: 認証済みリクエスト
+    Browser->>Worker: リクエスト
     Worker->>D1: SELECT workout sessions
     Worker-->>Browser: SSR HTML
     Browser->>Worker: htmx GET /api/sessions/123
     Worker->>D1: SELECT session detail
     Worker-->>Browser: HTML パーシャル
-```
-
-### 3. issue 起票
-
-ユーザーが「心拍数も記録したい、要望として issue 立てて」とチャットで伝えた場合:
-
-```mermaid
-sequenceDiagram
-    actor User as ユーザー
-    participant LLM as ChatGPT / Claude
-    participant Worker as Cloudflare Worker
-    participant GitHub as GitHub Issues API
-
-    User->>LLM: 心拍数も記録したい。issue 立てて
-    LLM->>Worker: POST /mcp/{secret}<br/>tool: create_feedback
-    Worker->>GitHub: POST /repos/japan4415/training-logger/issues<br/>(GITHUB_TOKEN で認証)
-    GitHub-->>Worker: issue URL
-    Worker-->>LLM: issue URL 返却
-    LLM-->>User: issue を作成しました: https://github.com/...
 ```
 
 ## リポジトリ構成
@@ -198,7 +138,7 @@ training-logger/
 │   └── roadmap.md               # フェーズ計画・将来構想
 ├── src/
 │   ├── index.ts                 # Hono app エントリポイント、ルーティング統合
-│   ├── env.ts                   # Bindings 型定義 (DB, MCP_SECRET, GITHUB_TOKEN)
+│   ├── env.ts                   # Bindings 型定義 (DB)
 │   ├── db/                      # データアクセス層
 │   │   ├── schema.ts            # テーブル定義の TypeScript 型
 │   │   ├── exercises.ts         # 種目の CRUD・別名解決
@@ -214,8 +154,7 @@ training-logger/
 │   │       ├── log-workout.ts
 │   │       ├── update-workout.ts
 │   │       ├── delete-workout.ts
-│   │       ├── get-history.ts
-│   │       └── create-feedback.ts
+│   │       └── get-history.ts
 │   ├── api/                     # REST API (Web UI 向け、読み取り専用)
 │   │   ├── routes.ts            # API ルーティング
 │   │   ├── sessions.ts          # セッション一覧・詳細
@@ -273,9 +212,8 @@ training-logger/
 
 ### OAuth 2.1 化
 
-Phase 3 以降で `@cloudflare/workers-oauth-provider` を導入し、標準的な MCP 認証（OAuth 2.1 + PKCE + CIMD）に移行する。これにより:
+将来的に `@cloudflare/workers-oauth-provider` を導入し、標準的な MCP 認証（OAuth 2.1 + PKCE + CIMD）に移行する可能性がある。これにより:
 
-- シークレットパス方式を廃止し、トークンベースの認証に移行
 - ChatGPT / claude.ai の OAuth 対応を活用した正式な認可フロー
 - 将来的な複数ユーザー対応の基盤
 
