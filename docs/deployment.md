@@ -23,7 +23,12 @@
       "database_id": "<production-db-id>",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  // Observability: console.log/error の出力とリクエストトレースを有効化
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
 }
 ```
 
