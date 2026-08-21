@@ -1,0 +1,15 @@
+{
+  "name": "training-logger",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./public" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "training-logger-db",
+      "database_id": "<production-db-id>",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
