@@ -483,10 +483,10 @@ LLM のツール選択精度はツール数が増えるほど低下する。日�
 MCP エンドポイント URL:
 
 ```
-https://<worker>.<account>.workers.dev/mcp
+https://training-logger.discord.jp/mcp
 ```
 
-`<worker>` と `<account>` は Cloudflare Workers のデプロイ先に置き換える。
+カスタムドメインを設定済み。`*.workers.dev` の URL（`https://<worker>.<account>.workers.dev/mcp`）も引き続き有効。
 
 ### ChatGPT
 
@@ -536,7 +536,7 @@ https://<worker>.<account>.workers.dev/mcp
       "args": [
         "-y",
         "mcp-remote",
-        "https://<worker>.<account>.workers.dev/mcp"
+        "https://training-logger.discord.jp/mcp"
       ]
     }
   }
