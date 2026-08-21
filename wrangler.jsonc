@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "training-logger-db",
-      "database_id": "<production-db-id>",
+      "database_id": "fed11dc7-680c-4245-a3db-95e73f4ddebe",
       "migrations_dir": "migrations"
     }
   ]
