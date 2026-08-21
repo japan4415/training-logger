@@ -22,7 +22,7 @@
 flowchart TD
     A["1. MCP サーバを AI チャットに接続"] --> B["2. チャットで筋トレを記録"]
     B --> C{"入力できない内容や改善要望がある?"}
-    C -->|はい| D["3. LLM が GitHub issue を起票"]
+    C -->|はい| D["3. GitHub issue を起票"]
     D --> E["4. Claude Code が issue を実装"]
     E --> B
     C -->|いいえ| F["5. Web サイトで振り返り"]
@@ -31,7 +31,7 @@ flowchart TD
 
 ### ステップ 1: MCP サーバを AI チャットに接続
 
-ChatGPT（Developer Mode Connector）、claude.ai（Custom Connector）、または Claude Desktop（mcp-remote ブリッジ）に本システムの MCP エンドポイントを登録する。接続先は `POST /mcp/{MCP_SECRET}`（Streamable HTTP）。各クライアントの接続手順は [mcp-server.md](./mcp-server.md) を参照。
+ChatGPT（Developer Mode Connector）、claude.ai（Custom Connector）、または Claude Desktop（mcp-remote ブリッジ）に本システムの MCP エンドポイントを登録する。接続先は `POST /mcp`（Streamable HTTP）。各クライアントの接続手順は [mcp-server.md](./mcp-server.md) を参照。
 
 - ChatGPT: [Developer Mode での MCP 接続](https://developers.openai.com/api/docs/mcp)（remote HTTPS 必須、認証なしモードで登録可）
 - claude.ai: [Custom Connector](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)（公開 HTTPS 必須、Free プランでも 1 個まで登録可）
@@ -45,14 +45,14 @@ ChatGPT（Developer Mode Connector）、claude.ai（Custom Connector）、また
 
 LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデータベースに登録する。未登録の種目は `register_exercise` で自動登録される。
 
-### ステップ 3: LLM が GitHub issue を起票
+### ステップ 3: GitHub issue を起票
 
-記録できない情報（例: 心拍数）や改善要望がある場合、ユーザーがチャットで伝えると LLM が MCP ツール `create_feedback` で GitHub issue を起票する。
+記録できない情報（例: 心拍数）や改善要望がある場合、チャットクライアント側の GitHub MCP コネクタや `gh` CLI で GitHub issue を起票する。
 
 - 「心拍数も記録したい。要望として issue 立てて」
 - 「種目のカテゴリ分けがほしい」
 
-これにより、アプリ自体がチャット経由で進化するフィードバックループが生まれる。
+これにより、アプリ自体がフィードバックループで進化する。
 
 ### ステップ 4: Claude Code が issue を実装
 
@@ -60,7 +60,7 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 
 ### ステップ 5: Web サイトで振り返り
 
-ブラウザから Web UI（Cloudflare Access で保護）にアクセスし、過去の記録を閲覧する。種目別の重量推移チャート、セッション一覧、詳細表示が利用できる。Web UI は読み取り専用のビューアであり、記録の入力はすべてチャット経由で行う。詳細は [web-ui.md](./web-ui.md) を参照。
+ブラウザから Web UI にアクセスし、過去の記録を閲覧する。種目別の重量推移チャート、セッション一覧、詳細表示が利用できる。Web UI は読み取り専用のビューアであり、記録の入力はすべてチャット経由で行う。詳細は [web-ui.md](./web-ui.md) を参照。
 
 ## 技術選定サマリ
 
@@ -80,7 +80,7 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 ### Phase 1: 基盤 + MCP 最小構成
 
 - D1 スキーマ設計・マイグレーション
-- MCP サーバ実装（7 ツール）
+- MCP サーバ実装（6 ツール）
 - ChatGPT / claude.ai からの接続確認
 - CI（型チェック・lint・テスト）
 
@@ -89,7 +89,6 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 - SSR ページ実装（セッション一覧・詳細・種目別推移）
 - htmx による部分更新
 - Chart.js による推移チャート
-- Cloudflare Access による認証設定
 
 ### Phase 3: 運用改善
 
@@ -103,7 +102,7 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 
 以下は現時点では対象外とする:
 
-- **複数ユーザー対応**: 個人利用に限定。認証はシークレットパス + Cloudflare Access
+- **複数ユーザー対応**: 個人利用に限定
 - **食事記録**: トレーニング記録に集中する
 - **ネイティブアプリ**: Web UI + AI チャットで十分
 

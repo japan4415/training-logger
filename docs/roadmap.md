@@ -503,7 +503,6 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 #### 非スコープ
 
 - アプリケーションコードの実装
-- Cloudflare Access の設定
 
 #### 受け入れ条件
 

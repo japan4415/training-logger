@@ -40,7 +40,7 @@ pnpm run dev
 ```
 Issue 作成                    Claude Code が Issue を読む
   |                                    |
-  |  MCP create_feedback               |
+  |  GitHub MCP / gh CLI               |
   |  または手動作成                     |
   v                                    v
 ┌─────────┐    ┌─────────────┐    ┌──────────────┐
