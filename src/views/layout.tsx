@@ -15,6 +15,7 @@ export const Layout: FC<LayoutProps> = (props) => (
 			<head>
 				<meta charset="UTF-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+				<meta name="color-scheme" content="light dark" />
 				<title>{props.title} - training-logger</title>
 				<link rel="stylesheet" href="/css/style.css" />
 				<script src="https://cdn.jsdelivr.net/npm/htmx.org@2/dist/htmx.min.js"></script>

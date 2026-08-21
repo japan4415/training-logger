@@ -317,7 +317,7 @@ const PeriodFilter: FC<{
 					type="button"
 					hx-get={`/exercises/${exerciseId}?period=${opt.value}`}
 					hx-target="#chart-section"
-					hx-swap="innerHTML"
+					hx-swap="innerHTML transition:true"
 					hx-push-url="true"
 					class={isActive ? "period-btn active" : "period-btn"}
 				>

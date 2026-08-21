@@ -1,17 +1,43 @@
-/* === CSS Custom Properties === */
+/* === CSS Custom Properties (Apple System Colors) === */
 :root {
-	--color-primary: #2563eb;
-	--color-primary-light: #dbeafe;
-	--color-bg: #f5f5f5;
-	--color-card: #ffffff;
-	--color-text: #1f2937;
-	--color-text-light: #6b7280;
-	--color-border: #e5e7eb;
-	--color-completed: #16a34a;
-	--color-planned: #ca8a04;
-	--color-skipped: #dc2626;
-	--radius: 8px;
-	--shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	--label: #1C1C1E;
+	--label-secondary: #636366;
+	--label-tertiary: #8E8E93;
+	--bg: #FFFFFF;
+	--bg-secondary: #F2F2F7;
+	--bg-tertiary: #FFFFFF;
+	--separator: rgba(60, 60, 67, 0.29);
+	--accent: #007AFF;
+	--accent-hover: rgba(0, 122, 255, 0.1);
+	--success: #34C759;
+	--warning: #FF9500;
+	--danger: #FF3B30;
+	--header-bg: rgba(255, 255, 255, 0.72);
+	--radius-card: 12px;
+	--radius-btn: 8px;
+	--shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+	--shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.15);
+	--label-on-accent: #FFFFFF;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--label: #FFFFFF;
+		--label-secondary: rgba(235, 235, 245, 0.6);
+		--label-tertiary: rgba(235, 235, 245, 0.3);
+		--bg: #000000;
+		--bg-secondary: #1C1C1E;
+		--bg-tertiary: #2C2C2E;
+		--separator: rgba(84, 84, 88, 0.6);
+		--accent: #0A84FF;
+		--accent-hover: rgba(10, 132, 255, 0.15);
+		--success: #30D158;
+		--warning: #FF9F0A;
+		--danger: #FF453A;
+		--header-bg: rgba(0, 0, 0, 0.72);
+		--shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 1px rgba(0, 0, 0, 0.2);
+		--shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.4);
+	}
 }
 
 /* === Reset & Base === */
@@ -25,14 +51,18 @@
 
 body {
 	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-	background: var(--color-bg);
-	color: var(--color-text);
-	line-height: 1.6;
+	background: var(--bg-secondary);
+	color: var(--label);
+	font-size: 16px;
+	line-height: 1.4;
+	letter-spacing: 0;
 	min-width: 320px;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 a {
-	color: var(--color-primary);
+	color: var(--accent);
 	text-decoration: none;
 }
 
@@ -40,10 +70,12 @@ a:hover {
 	text-decoration: underline;
 }
 
-/* === App Header === */
+/* === App Header (Translucent Material) === */
 .app-header {
-	background: var(--color-card);
-	border-bottom: 1px solid var(--color-border);
+	background: var(--header-bg);
+	backdrop-filter: blur(20px) saturate(180%);
+	-webkit-backdrop-filter: blur(20px) saturate(180%);
+	border-bottom: 1px solid var(--separator);
 	padding: 12px 16px;
 	position: sticky;
 	top: 0;
@@ -51,13 +83,15 @@ a:hover {
 }
 
 .app-title {
-	font-size: 1.1rem;
-	font-weight: 700;
+	font-size: 20px;
+	font-weight: 600;
+	line-height: 1.25;
+	letter-spacing: -0.01em;
 	margin-bottom: 8px;
 }
 
 .app-title a {
-	color: var(--color-text);
+	color: var(--label);
 }
 
 .app-title a:hover {
@@ -70,21 +104,29 @@ a:hover {
 }
 
 .nav-link {
-	font-size: 0.9rem;
-	color: var(--color-text-light);
+	font-size: 13px;
+	font-weight: 400;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-secondary);
 	padding: 4px 0;
 	border-bottom: 2px solid transparent;
+	transition: color 0.15s, border-color 0.15s;
 }
 
 .nav-link.active {
-	color: var(--color-primary);
-	border-bottom-color: var(--color-primary);
+	color: var(--accent);
+	border-bottom-color: var(--accent);
 	font-weight: 600;
 }
 
 .nav-link:hover {
-	color: var(--color-primary);
+	color: var(--accent);
 	text-decoration: none;
+}
+
+.nav-link:active {
+	transform: scale(0.97);
 }
 
 /* === Main Content === */
@@ -94,6 +136,15 @@ a:hover {
 	margin: 0 auto;
 }
 
+/* === Page Titles (h1 directly inside main-content) === */
+.main-content > h1 {
+	font-size: 28px;
+	font-weight: 700;
+	line-height: 1.2;
+	letter-spacing: -0.02em;
+	margin-bottom: 16px;
+}
+
 /* === Month Navigation === */
 .month-nav {
 	display: flex;
@@ -101,26 +152,36 @@ a:hover {
 	justify-content: space-between;
 	margin-bottom: 16px;
 	padding: 12px;
-	background: var(--color-card);
-	border-radius: var(--radius);
+	background: var(--bg-tertiary);
+	border-radius: var(--radius-card);
+	border: 1px solid var(--separator);
 	box-shadow: var(--shadow);
 }
 
 .month-nav-btn {
-	font-size: 0.9rem;
-	color: var(--color-primary);
+	font-size: 13px;
+	font-weight: 400;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--accent);
 	padding: 4px 8px;
+	border-radius: var(--radius-btn);
+	transition: background 0.1s;
 }
 
 .month-nav-btn:hover {
 	text-decoration: none;
-	background: var(--color-primary-light);
-	border-radius: 4px;
+	background: var(--accent-hover);
+}
+
+.month-nav-btn:active {
+	transform: scale(0.97);
 }
 
 .month-nav-current {
-	font-size: 1rem;
+	font-size: 16px;
 	font-weight: 600;
+	line-height: 1.4;
 }
 
 /* === Session Cards (list) === */
@@ -132,41 +193,53 @@ a:hover {
 
 .session-card {
 	display: block;
-	background: var(--color-card);
-	border-radius: var(--radius);
+	background: var(--bg-tertiary);
+	border-radius: var(--radius-card);
 	padding: 14px 16px;
+	border: 1px solid var(--separator);
 	box-shadow: var(--shadow);
-	border-left: 4px solid var(--color-primary);
-	color: var(--color-text);
-	transition: box-shadow 0.15s;
+	border-left: 4px solid var(--accent);
+	color: var(--label);
+	transition: box-shadow 0.15s, transform 0.1s;
 }
 
 .session-card:hover {
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	box-shadow: var(--shadow-hover);
 	text-decoration: none;
+}
+
+.session-card:active {
+	transform: scale(0.97);
 }
 
 .session-card-date {
 	font-weight: 600;
-	font-size: 1rem;
+	font-size: 16px;
+	line-height: 1.4;
 	margin-bottom: 4px;
 }
 
 .session-card-goal {
-	font-size: 0.9rem;
-	color: var(--color-text-light);
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-secondary);
 	margin-bottom: 2px;
 }
 
 .session-card-exercises {
-	font-size: 0.85rem;
-	color: var(--color-text-light);
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-secondary);
 	margin-bottom: 2px;
 }
 
 .session-card-condition {
-	font-size: 0.85rem;
-	color: var(--color-text-light);
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-secondary);
 }
 
 /* === Session Detail === */
@@ -182,21 +255,29 @@ a:hover {
 	align-items: center;
 	justify-content: space-between;
 	padding: 12px;
-	background: var(--color-card);
-	border-radius: var(--radius);
+	background: var(--bg-tertiary);
+	border-radius: var(--radius-card);
+	border: 1px solid var(--separator);
 	box-shadow: var(--shadow);
 }
 
 .session-nav-link {
-	font-size: 0.9rem;
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
 	padding: 4px 8px;
-	color: var(--color-primary);
+	color: var(--accent);
+	border-radius: var(--radius-btn);
+	transition: background 0.1s, transform 0.1s;
 }
 
 .session-nav-link:hover {
 	text-decoration: none;
-	background: var(--color-primary-light);
-	border-radius: 4px;
+	background: var(--accent-hover);
+}
+
+.session-nav-link:active {
+	transform: scale(0.97);
 }
 
 .session-nav-placeholder {
@@ -204,20 +285,24 @@ a:hover {
 }
 
 .session-nav-date {
-	font-size: 1rem;
+	font-size: 16px;
 	font-weight: 600;
+	line-height: 1.4;
 }
 
 /* Session Metadata */
 .session-meta {
-	background: var(--color-card);
-	border-radius: var(--radius);
+	background: var(--bg-tertiary);
+	border-radius: var(--radius-card);
 	padding: 14px 16px;
+	border: 1px solid var(--separator);
 	box-shadow: var(--shadow);
 }
 
 .session-meta-item {
-	font-size: 0.9rem;
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
 	margin-bottom: 4px;
 }
 
@@ -227,34 +312,54 @@ a:hover {
 
 .meta-label {
 	font-weight: 600;
-	color: var(--color-text-light);
+	color: var(--label-secondary);
 }
 
-/* === Exercise Cards (detail page) === */
+/* === Exercise Cards (detail page & list page) === */
 .exercise-list {
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
 }
 
+#exercise-list {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
 .exercise-card {
-	background: var(--color-card);
-	border-radius: var(--radius);
+	display: block;
+	background: var(--bg-tertiary);
+	border-radius: var(--radius-card);
 	padding: 14px 16px;
+	border: 1px solid var(--separator);
 	box-shadow: var(--shadow);
-	border-left: 4px solid var(--color-border);
+	border-left: 4px solid var(--separator);
+	color: var(--label);
+	transition: box-shadow 0.15s, transform 0.1s;
+}
+
+/* Exercise cards in exercises-list are clickable <a> tags */
+a.exercise-card:hover {
+	box-shadow: var(--shadow-hover);
+	text-decoration: none;
+}
+
+a.exercise-card:active {
+	transform: scale(0.97);
 }
 
 .exercise-card.status-completed {
-	border-left-color: var(--color-completed);
+	border-left-color: var(--success);
 }
 
 .exercise-card.status-planned {
-	border-left-color: var(--color-planned);
+	border-left-color: var(--warning);
 }
 
 .exercise-card.status-skipped {
-	border-left-color: var(--color-skipped);
+	border-left-color: var(--danger);
 }
 
 .exercise-card-header {
@@ -266,45 +371,56 @@ a:hover {
 
 .status-icon {
 	font-weight: 700;
-	font-size: 1rem;
+	font-size: 16px;
 }
 
 .status-icon.status-completed {
-	color: var(--color-completed);
+	color: var(--success);
 }
 
 .status-icon.status-planned {
-	color: var(--color-planned);
+	color: var(--warning);
 }
 
 .status-icon.status-skipped {
-	color: var(--color-skipped);
+	color: var(--danger);
 }
 
 .exercise-name-link {
 	font-weight: 600;
-	font-size: 0.95rem;
+	font-size: 16px;
+	line-height: 1.4;
+}
+
+.exercise-name-link:active {
+	transform: scale(0.97);
 }
 
 .form-cues-indicator {
-	font-size: 0.75rem;
-	color: var(--color-text-light);
-	background: var(--color-bg);
+	font-size: 11px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-tertiary);
+	background: var(--bg-secondary);
 	padding: 1px 6px;
 	border-radius: 4px;
 	cursor: help;
 }
 
 .exercise-equipment {
-	font-size: 0.85rem;
-	color: var(--color-text-light);
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-secondary);
 	margin-bottom: 4px;
 	padding-left: 24px;
 }
 
 .exercise-notes {
-	font-size: 0.85rem;
-	color: var(--color-text-light);
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-secondary);
 	margin-bottom: 4px;
 	padding-left: 24px;
 	font-style: italic;
@@ -312,7 +428,9 @@ a:hover {
 
 /* === Set Display === */
 .set-display {
-	font-size: 0.9rem;
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
 	padding-left: 24px;
 }
 
@@ -323,29 +441,34 @@ a:hover {
 }
 
 .set-planned {
-	color: var(--color-planned);
+	color: var(--warning);
 }
 
 .set-actual {
-	color: var(--color-text);
+	color: var(--label);
 }
 
 .set-label {
 	font-weight: 600;
-	font-size: 0.8rem;
+	font-size: 11px;
+	line-height: 1.35;
 }
 
 /* === Error / Empty Messages === */
 .error-message {
 	text-align: center;
-	color: var(--color-skipped);
+	color: var(--danger);
 	padding: 24px;
+	font-size: 16px;
+	line-height: 1.4;
 }
 
 .empty-message {
 	text-align: center;
-	color: var(--color-text-light);
+	color: var(--label-secondary);
 	padding: 24px;
+	font-size: 16px;
+	line-height: 1.4;
 }
 
 /* === Back Link === */
@@ -355,44 +478,61 @@ a:hover {
 }
 
 .back-link a {
-	font-size: 0.9rem;
+	display: inline-block;
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	transition: transform 0.1s;
+}
+
+.back-link a:active {
+	transform: scale(0.97);
 }
 
 /* === Footer === */
 .app-footer {
 	text-align: center;
 	padding: 16px;
-	font-size: 0.8rem;
-	color: var(--color-text-light);
-	border-top: 1px solid var(--color-border);
+	font-size: 11px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-tertiary);
+	border-top: 1px solid var(--separator);
 	margin-top: 24px;
 }
 
 /* === Category Tabs & Period Buttons === */
 .tab,
 .period-btn {
-	font-size: 0.85rem;
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
 	padding: 6px 14px;
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius);
-	background: var(--color-card);
-	color: var(--color-text-light);
+	border: 1px solid var(--separator);
+	border-radius: var(--radius-btn);
+	background: var(--bg-tertiary);
+	color: var(--label-secondary);
 	cursor: pointer;
-	transition: background 0.15s, color 0.15s, border-color 0.15s;
+	transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
 }
 
 .tab:hover,
 .period-btn:hover {
-	background: var(--color-primary-light);
-	color: var(--color-primary);
-	border-color: var(--color-primary);
+	background: var(--accent-hover);
+	color: var(--accent);
+	border-color: var(--accent);
+}
+
+.tab:active,
+.period-btn:active {
+	transform: scale(0.97);
 }
 
 .tab.active,
 .period-btn.active {
-	background: var(--color-primary);
-	color: #ffffff;
-	border-color: var(--color-primary);
+	background: var(--accent);
+	color: var(--label-on-accent);
+	border-color: var(--accent);
 	font-weight: 600;
 }
 
@@ -407,14 +547,17 @@ a:hover {
 /* === Exercise List (exercises page) === */
 .exercise-name {
 	font-weight: 600;
-	font-size: 0.95rem;
-	color: var(--color-text);
+	font-size: 16px;
+	line-height: 1.4;
+	color: var(--label);
 }
 
 .exercise-category {
-	font-size: 0.75rem;
-	color: var(--color-text-light);
-	background: var(--color-bg);
+	font-size: 11px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-tertiary);
+	background: var(--bg-secondary);
 	padding: 1px 8px;
 	border-radius: 4px;
 }
@@ -422,9 +565,96 @@ a:hover {
 .exercise-meta {
 	display: flex;
 	gap: 12px;
-	font-size: 0.85rem;
-	color: var(--color-text-light);
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	color: var(--label-secondary);
 	margin-top: 4px;
+}
+
+/* === Exercise Info (progress page) === */
+#exercise-info {
+	background: var(--bg-tertiary);
+	border-radius: var(--radius-card);
+	padding: 16px;
+	border: 1px solid var(--separator);
+	box-shadow: var(--shadow);
+	margin-bottom: 16px;
+}
+
+#exercise-info h1 {
+	font-size: 28px;
+	font-weight: 700;
+	line-height: 1.2;
+	letter-spacing: -0.02em;
+	margin-bottom: 12px;
+}
+
+#exercise-info dl {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 4px 12px;
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+}
+
+#exercise-info dt {
+	font-weight: 600;
+	color: var(--label-secondary);
+}
+
+#exercise-info dd {
+	color: var(--label);
+}
+
+/* === History Table (progress page) === */
+#history-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	margin-top: 16px;
+}
+
+#history-table th {
+	text-align: left;
+	font-weight: 600;
+	color: var(--label-secondary);
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--separator);
+}
+
+#history-table td {
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--separator);
+	color: var(--label);
+}
+
+#history-table tbody tr:last-child td {
+	border-bottom: none;
+}
+
+#history-empty,
+#chart-empty {
+	text-align: center;
+	color: var(--label-secondary);
+	padding: 24px;
+	font-size: 16px;
+	line-height: 1.4;
+}
+
+/* === Chart === */
+#progress-chart {
+	margin-top: 16px;
+	margin-bottom: 8px;
+}
+
+/* === View Transitions (htmx swap crossfade) === */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 180ms;
 }
 
 /* === Responsive (tablet and up) === */
@@ -442,5 +672,20 @@ a:hover {
 
 	.main-content {
 		padding: 24px;
+	}
+}
+
+/* === Reduced Motion === */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation-duration: 0.01ms !important;
 	}
 }
