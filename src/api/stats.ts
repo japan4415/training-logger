@@ -6,6 +6,19 @@ import type { Bindings } from "../env.js";
 
 const VALID_PERIODS = new Set(["1m", "3m", "6m", "all"]);
 const PERIOD_MONTHS: Record<string, number> = { "1m": 1, "3m": 3, "6m": 6 };
+const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Check that a string is a valid YYYY-MM-DD date (format + real date). */
+function isValidDateString(value: string): boolean {
+	if (!DATE_FORMAT.test(value)) return false;
+	const [y, m, d] = value.split("-").map(Number);
+	const date = new Date(Date.UTC(y, m - 1, d));
+	return (
+		date.getUTCFullYear() === y &&
+		date.getUTCMonth() === m - 1 &&
+		date.getUTCDate() === d
+	);
+}
 
 /**
  * Resolve a date-range `from` value.
@@ -54,7 +67,7 @@ export async function getExerciseStatsHandler(
 	const db = c.env.DB;
 	const id = Number(c.req.param("id"));
 
-	if (Number.isNaN(id) || id <= 0) {
+	if (Number.isNaN(id) || id <= 0 || !Number.isInteger(id)) {
 		return c.json({ error: "Invalid exercise ID" }, 400);
 	}
 
@@ -66,6 +79,14 @@ export async function getExerciseStatsHandler(
 	const fromParam = c.req.query("from");
 	const toParam = c.req.query("to");
 	const periodParam = c.req.query("period");
+
+	if (fromParam && !isValidDateString(fromParam)) {
+		return c.json({ error: "Invalid from date. Expected YYYY-MM-DD" }, 400);
+	}
+
+	if (toParam && !isValidDateString(toParam)) {
+		return c.json({ error: "Invalid to date. Expected YYYY-MM-DD" }, 400);
+	}
 
 	if (periodParam && !VALID_PERIODS.has(periodParam)) {
 		return c.json(

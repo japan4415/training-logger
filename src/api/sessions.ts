@@ -97,7 +97,7 @@ export async function getSession(c: Context<{ Bindings: Bindings }>) {
 	const db = c.env.DB;
 	const id = Number(c.req.param("id"));
 
-	if (Number.isNaN(id) || id <= 0) {
+	if (Number.isNaN(id) || id <= 0 || !Number.isInteger(id)) {
 		return c.json({ error: "Invalid session ID" }, 400);
 	}
 

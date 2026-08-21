@@ -212,6 +212,11 @@ describe("Exercises API", () => {
 			const { res } = await fetchJson("/api/exercises/abc");
 			expect(res.status).toBe(400);
 		});
+
+		it("returns 400 for non-integer exercise ID", async () => {
+			const { res } = await fetchJson("/api/exercises/1.5");
+			expect(res.status).toBe(400);
+		});
 	});
 
 	describe("GET /api/exercises/:id/stats", () => {
@@ -301,6 +306,43 @@ describe("Exercises API", () => {
 			const { res } = await fetchJson(
 				`/api/exercises/${bench.id}/stats?period=2y`,
 			);
+			expect(res.status).toBe(400);
+		});
+
+		it("returns 400 for invalid from date string", async () => {
+			const { bench } = await seedTestData();
+			const { res } = await fetchJson(
+				`/api/exercises/${bench.id}/stats?from=invalid`,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("returns 400 for non-existent from date", async () => {
+			const { bench } = await seedTestData();
+			const { res } = await fetchJson(
+				`/api/exercises/${bench.id}/stats?from=2026-99-99`,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("returns 400 for invalid to date string", async () => {
+			const { bench } = await seedTestData();
+			const { res } = await fetchJson(
+				`/api/exercises/${bench.id}/stats?to=not-a-date`,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("returns 400 for non-existent to date", async () => {
+			const { bench } = await seedTestData();
+			const { res } = await fetchJson(
+				`/api/exercises/${bench.id}/stats?to=2026-02-30`,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("returns 400 for non-integer exercise ID in stats", async () => {
+			const { res } = await fetchJson("/api/exercises/1.5/stats");
 			expect(res.status).toBe(400);
 		});
 

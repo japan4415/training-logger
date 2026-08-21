@@ -274,5 +274,10 @@ describe("Sessions API", () => {
 			const { res } = await fetchJson("/api/sessions/abc");
 			expect(res.status).toBe(400);
 		});
+
+		it("returns 400 for non-integer session ID", async () => {
+			const { res } = await fetchJson("/api/sessions/1.5");
+			expect(res.status).toBe(400);
+		});
 	});
 });
