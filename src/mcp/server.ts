@@ -28,7 +28,10 @@ const SERVER_INSTRUCTIONS = `\
 
 ■ 対応できない入力
 - ツールのスキーマで表現できない種目パラメータや測定単位に遭遇した場合、その旨をユーザーに伝えてください。
-- 必要に応じて https://github.com/japan4415/training-logger/issues/new への issue 起票を案内してください。`;
+- 必要に応じて https://github.com/japan4415/training-logger/issues/new への issue 起票を案内してください。
+
+■ 手書きノートの速記法
+ユーザーは手書きノートで「reps/weight」形式の速記を使うことがあります（例: 「20/10」は20回・重量10）。スラッシュの左が回数(reps)、右が重量またはレベル(weight)です。複数セットが並ぶ場合（例: 「20/15 20/15」）、それぞれが独立したセットの reps/weight として扱ってください。単位（kg/lbs/レベル）が明記されていない場合は、種目や器具の種類から推測するか、不明であればユーザーに確認してください。`;
 
 /**
  * Create a new McpServer instance configured for training-logger.
