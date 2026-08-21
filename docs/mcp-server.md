@@ -19,7 +19,7 @@ MCP は LLM アプリケーションが外部ツール・データソースに�
 
 ### 実装
 
-Hono ルート `POST /mcp/:secret` で JSON-RPC リクエストを受け付ける。処理する JSON-RPC メソッド:
+Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処理する JSON-RPC メソッド:
 
 - `initialize` -- クライアントとのハンドシェイク
 - `tools/list` -- 利用可能なツール一覧の返却
@@ -27,13 +27,9 @@ Hono ルート `POST /mcp/:secret` で JSON-RPC リクエストを受け付け�
 
 **GET リクエストには 405 Method Not Allowed を返す**。本サーバは SSE ストリームを提供しないステートレス実装であり、Streamable HTTP 仕様に基づきサーバは GET に対して 405 を返してよい。
 
-### 認証
-
-シークレットパス方式を採用する。URL パス内の `:secret` パラメータと Workers Secrets に設定した `MCP_SECRET` を比較し、不一致の場合は 404 Not Found を返す（エンドポイントの存在を秘匿する）。認証方式の詳細は [アーキテクチャ](./architecture.md) を参照。
-
 ## ツール定義
 
-本サーバは 7 つのツールを提供する。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
+本サーバは 6 つのツールを提供する。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
 
 ### search_exercises
 
@@ -464,57 +460,11 @@ Hono ルート `POST /mcp/:secret` で JSON-RPC リクエストを受け付け�
 
 - 該当データなしの場合は空の結果を返す（エラーにしない）
 
-### create_feedback
-
-改善要望・バグ報告の GitHub Issue 起票。
-
-**説明文** (LLM 向け):
-
-> training-logger 自体への改善要望やバグ報告を GitHub Issue として登録します。記録できないデータ形式に遭遇した場合や、機能要望を伝えたい場合に使います。
-
-**入力スキーマ**:
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "title": {
-      "type": "string",
-      "description": "Issue のタイトル"
-    },
-    "body": {
-      "type": "string",
-      "description": "Issue の本文 (背景・要望・期待動作を含む)"
-    },
-    "labels": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": ["enhancement", "bug", "question"]
-      },
-      "default": ["enhancement"],
-      "description": "Issue のラベル"
-    }
-  },
-  "required": ["title", "body"]
-}
-```
-
-**挙動**:
-
-1. GitHub REST API `POST /repos/japan4415/training-logger/issues` を Workers Secrets の `GITHUB_TOKEN` で呼び出す
-2. Issue の URL と番号を返す
-
-**エラー応答**:
-
-- GitHub API エラー: HTTP ステータスコードとレスポンス本文を返す
-- `GITHUB_TOKEN` が未設定: 設定を促すメッセージを返す（`wrangler secret put GITHUB_TOKEN` の案内）
-
 ## ツール設計の指針
 
-### ツール数を 7 に絞った理由
+### ツール数を 6 に絞った理由
 
-LLM のツール選択精度はツール数が増えるほど低下する。日常的な筋トレ記録に必要な CRUD 操作（検索・登録・記録・更新・削除・照会）と、アプリ自体へのフィードバック手段を必要最小限の 7 ツールに整理した。
+LLM のツール選択精度はツール数が増えるほど低下する。日常的な筋トレ記録に必要な CRUD 操作（検索・登録・記録・更新・削除・照会）を必要最小限の 6 ツールに整理した。GitHub Issue の起票はチャットクライアント側の GitHub MCP コネクタや `gh` CLI で直接行う。
 
 ### 説明文の書き方
 
@@ -533,10 +483,10 @@ LLM のツール選択精度はツール数が増えるほど低下する。日�
 MCP エンドポイント URL:
 
 ```
-https://<worker>.<account>.workers.dev/mcp/<MCP_SECRET>
+https://<worker>.<account>.workers.dev/mcp
 ```
 
-`<worker>` と `<account>` は Cloudflare Workers のデプロイ先、`<MCP_SECRET>` は Workers Secrets に設定したシークレット値に置き換える。
+`<worker>` と `<account>` は Cloudflare Workers のデプロイ先に置き換える。
 
 ### ChatGPT
 
@@ -549,7 +499,7 @@ https://<worker>.<account>.workers.dev/mcp/<MCP_SECRET>
 
 **注意事項**:
 
-- 書き込みツール（`log_workout`, `update_workout`, `delete_workout`, `register_exercise`, `create_feedback`）は通常チャットで利用可能（実行前に確認あり）
+- 書き込みツール（`log_workout`, `update_workout`, `delete_workout`, `register_exercise`）は通常チャットで利用可能（実行前に確認あり）
 - Deep Research モードでは read-only（`search_exercises`, `get_history` のみ利用可能）
 - モバイルアプリからの MCP コネクタ利用は非対応
 
@@ -586,7 +536,7 @@ https://<worker>.<account>.workers.dev/mcp/<MCP_SECRET>
       "args": [
         "-y",
         "mcp-remote",
-        "https://<worker>.<account>.workers.dev/mcp/<MCP_SECRET>"
+        "https://<worker>.<account>.workers.dev/mcp"
       ]
     }
   }
@@ -640,25 +590,7 @@ https://<worker>.<account>.workers.dev/mcp/<MCP_SECRET>
 **LLM の応答**:
 > 前回 (8/16) のアダクターは 20回2セットで、1セット目 50 lbs、2セット目 45 lbs でした。
 
-### 例 3: 改善要望
-
-**ユーザー**:
-> 有酸素の心拍数も記録できるようにしてほしい
-
-**LLM の処理**: `create_feedback` を呼び出す
-
-```json
-{
-  "title": "有酸素運動の心拍数記録に対応してほしい",
-  "body": "有酸素運動（ウォーキング等）の記録に心拍数フィールドを追加してほしい。現在は速度・傾斜・時間のみ記録可能だが、心拍数による強度管理も行いたい。\n\n期待動作: sets テーブルに heart_rate_avg / heart_rate_max のようなカラムを追加し、log_workout のセット情報に心拍数を指定できるようにする。",
-  "labels": ["enhancement"]
-}
-```
-
-**LLM の応答**:
-> 改善要望として Issue #3 を作成しました。心拍数の記録対応を提案しています。
-
-### 例 4: ノート写真からの一括登録
+### 例 3: ノート写真からの一括登録
 
 **ユーザー**:
 > (ノートの写真を添付して) この記録を登録して

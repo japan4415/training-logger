@@ -8,7 +8,7 @@
 
 Issue 11 完了までは CI が存在しないため、PR は手元で `pnpm run typecheck` / `lint` / `test` を実行して確認したうえで merge する。
 
-- **Phase 1** -- 基盤構築: プロジェクト初期化からデータモデル、MCP ツール全7種の実装まで
+- **Phase 1** -- 基盤構築: プロジェクト初期化からデータモデル、MCP ツール全6種の実装まで
 - **Phase 2** -- Web UI: REST API と 4 画面の SSR 実装
 - **Phase 3** -- 運用基盤: CI/CD、本番デプロイ、E2E 検証、ドキュメント最終化
 
@@ -19,15 +19,15 @@ graph LR
     I1[Issue 1: スキャフォールディング]
     I2[Issue 2: D1 スキーマ]
     I3[Issue 3: データアクセス層]
-    I4[Issue 4: MCP 基盤]
+    I4[Issue 4: MCP エンドポイント基盤]
     I5[Issue 5: MCP 種目検索・登録]
     I6[Issue 6: MCP ワークアウト記録]
-    I7[Issue 7: MCP 履歴・フィードバック]
+    I7[Issue 7: MCP 履歴照会]
     I8[Issue 8: REST API]
     I9[Issue 9: Web UI セッション]
     I10[Issue 10: Web UI 種目進捗]
     I11[Issue 11: CI/CD]
-    I12[Issue 12: 初回デプロイ]
+    I12[Issue 12: 初回デプロイ<br/>一部完了済み]
     I13[Issue 13: E2E 検証]
     I14[Issue 14: ドキュメント最終化]
 
@@ -85,7 +85,7 @@ graph LR
 - [ ] `vitest.config.ts`
 - [ ] `wrangler.jsonc`（[docs/deployment.md](./deployment.md) の内容に準拠）
 - [ ] `src/index.ts`（Hono app + `GET /health` エンドポイントのみ）
-- [ ] `src/env.ts`（Bindings 型定義: `DB`, `MCP_SECRET`, `GITHUB_TOKEN`）
+- [ ] `src/env.ts`（Bindings 型定義: `DB`）
 - [ ] `package.json` scripts: `dev`, `deploy`, `typecheck`, `lint`, `format`, `test`
 - [ ] `.gitignore`（`node_modules`, `.wrangler`, `dist`）
 - [ ] `public/` ディレクトリと `migrations/` ディレクトリの placeholder
@@ -197,7 +197,7 @@ MCP ツールと REST API が共用するデータアクセス関数を実装す
 
 ---
 
-### Issue 4: MCP エンドポイント基盤とシークレットパス認証
+### Issue 4: MCP エンドポイント基盤
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
@@ -208,10 +208,9 @@ ChatGPT / claude.ai からの接続口となる MCP エンドポイントを構�
 #### スコープ
 
 - [ ] `src/mcp/handler.ts`
-  - `POST /mcp/:secret` ルート
-  - `:secret` と環境変数 `MCP_SECRET` の比較。不一致は 404 を返す
+  - `POST /mcp` ルート
   - JSON-RPC 処理: `initialize`（protocolVersion `2025-11-25`）/ `tools/list` / `tools/call`
-  - `GET /mcp/*` は 405 を返す
+  - `GET /mcp` は 405 を返す
 - [ ] `src/mcp/server.ts`
   - `McpServer` の生成とツール登録の集約（この時点では空）
   - 空でも `tools/list` が `[]` を返す
@@ -224,9 +223,8 @@ ChatGPT / claude.ai からの接続口となる MCP エンドポイントを構�
 
 #### 受け入れ条件
 
-- [ ] curl で `initialize` が正常応答を返す
-- [ ] 不正な secret で 404 が返る
-- [ ] `GET /mcp/*` で 405 が返る
+- [ ] curl で `POST /mcp` に対して `initialize` が正常応答を返す
+- [ ] `GET /mcp` で 405 が返る
 - [ ] `tools/list` が `[]`（空配列）を返す
 - [ ] `pnpm run typecheck` と `pnpm run lint` が通過する
 
@@ -325,13 +323,13 @@ MCP 経由で種目の検索と新規登録を行うツールを実装する。
 
 ---
 
-### Issue 7: MCP ツール - 履歴照会・フィードバック
+### Issue 7: MCP ツール - 履歴照会
 
 **Phase**: 1 / **ラベル**: `phase-1`
 
 #### 背景
 
-過去の記録を照会するツールと、アプリへのフィードバックを GitHub Issue として起票するツールを実装する。
+過去の記録を照会するツールを実装する。
 
 #### スコープ
 
@@ -339,12 +337,8 @@ MCP 経由で種目の検索と新規登録を行うツールを実装する。
   - 種目別の履歴照会
   - 期間指定（from / to）
   - 最新 N 件の取得
-- [ ] `src/mcp/tools/create-feedback.ts`
-  - GitHub API `POST /repos/japan4415/training-logger/issues` を呼び出し
-  - 環境変数 `GITHUB_TOKEN` を使用
-  - ラベルの付与
 - [ ] `src/mcp/server.ts` へのツール登録
-- [ ] `test/mcp/` に 2 ファイル（GitHub API 呼び出しはモックで検証）
+- [ ] `test/mcp/` にテストファイル
 
 #### 非スコープ
 
@@ -355,14 +349,12 @@ MCP 経由で種目の検索と新規登録を行うツールを実装する。
 
 - [ ] 「前回のシーテッドロウ何 kg?」に相当する照会がデータを返す
 - [ ] 最新 5 件の一覧が取得できる
-- [ ] GitHub Issue の作成がモックで検証される
-- [ ] `GITHUB_TOKEN` 未設定時に適切なエラーメッセージが返る
-- [ ] `tools/list` で全 7 ツールが返る
+- [ ] `tools/list` で全 6 ツールが返る
 - [ ] 全テストが通過する
 
 #### 参照
 
-- [docs/mcp-server.md](./mcp-server.md)（ツール定義: `get_history`, `create_feedback`）
+- [docs/mcp-server.md](./mcp-server.md)（ツール定義: `get_history`）
 - 依存 Issue: Issue 3（データアクセス層の実装）, Issue 4（MCP エンドポイント基盤）
 
 ---
@@ -511,7 +503,6 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 #### 非スコープ
 
 - アプリケーションコードの実装
-- Cloudflare Access の設定
 
 #### 受け入れ条件
 
@@ -527,25 +518,21 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 
 ---
 
-### Issue 12: 初回デプロイと Cloudflare 設定
+### Issue 12: 初回デプロイ
 
 **Phase**: 3 / **ラベル**: `phase-3`
 
+> **注記**: D1 データベースの作成と初回デプロイは PR #19 で完了済み。残作業はマイグレーション適用と疎通確認のみ。
+
 #### 背景
 
-本番環境を構築し、動作確認を行う。ユーザー操作を多く含む Issue であり、Claude Code はコマンド実行と手順書の提示を担い、ダッシュボード操作とクレデンシャル作成はユーザーが行う。
+本番環境を構築し、動作確認を行う。
 
 #### スコープ
 
-- [ ] `wrangler d1 create training-logger-db` → `database_id` を `wrangler.jsonc` に反映
-- [ ] `wrangler secret put MCP_SECRET`（`openssl rand -hex 32` で生成した値を設定）
-- [ ] **ユーザー操作**: GitHub fine-grained PAT の作成（対象: `japan4415/training-logger`、権限: Issues Read and write）
-- [ ] `wrangler secret put GITHUB_TOKEN`
+- [x] `wrangler d1 create training-logger-db` → `database_id` を `wrangler.jsonc` に反映（完了済み）
 - [ ] `wrangler d1 migrations apply training-logger-db --remote`
-- [ ] `wrangler deploy`
-- [ ] **ユーザー操作**: Cloudflare Access アプリ 2 つの設定
-  - `/mcp/*` に対して Bypass ポリシー
-  - アプリドメイン全体に対して Email 許可リスト Allow ポリシー
+- [x] `wrangler deploy`（完了済み）
 - [ ] 疎通確認一式
 
 #### 非スコープ
@@ -556,15 +543,13 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 #### 受け入れ条件
 
 - [ ] `GET /health` が 200 を返す
-- [ ] 正しい secret で MCP `initialize` が成功する
-- [ ] 不正な secret で 404 が返る
-- [ ] Cloudflare Access 経由で Web UI が表示される
-- [ ] 未認証アクセスは Cloudflare Access のログイン画面にリダイレクトされる
+- [ ] `POST /mcp` で MCP `initialize` が成功する
+- [ ] ブラウザで `/` にアクセスすると Web UI が表示される
 
 #### 参照
 
 - [docs/deployment.md](./deployment.md)（初期構築手順）
-- 依存 Issue: Issue 7（MCP ツール - 履歴照会・フィードバック）, Issue 9（Web UI セッション一覧・詳細）, Issue 11（CI/CD パイプライン）
+- 依存 Issue: Issue 7（MCP ツール - 履歴照会）, Issue 9（Web UI セッション一覧・詳細）, Issue 11（CI/CD パイプライン）
 
 ---
 
@@ -642,7 +627,7 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 
 以下は現時点では実装しない。必要性が明確になった時点で Issue を起票する。
 
-- **OAuth 2.1 化**: `workers-oauth-provider` を使用した OAuth 認証への移行。シークレットパス方式からの脱却
+- **OAuth 2.1 化**: `workers-oauth-provider` を使用した OAuth 認証への移行
 - **MCP 2026-07-28 仕様追従**: MCP SDK のメジャーアップデートへの対応
 - **体重・食事・心拍数記録**: 筋トレ記録以外のヘルスデータの取り込み
 - **D1 バックアップの cron 自動化**: GitHub Actions の schedule トリガーによる定期エクスポート
@@ -656,5 +641,4 @@ GitHub Actions で CI/CD パイプラインを構築し、PR 時の自動チェ�
 | MCP SDK v1 から v2 への移行 | ツール定義の書き換え | Zod スキーマは再利用可能。移行コストは低い |
 | ChatGPT コネクタの仕様変更 | MCP 接続が壊れる | MCP 標準に準拠しているため影響は限定的。claude.ai がバックアップ |
 | D1 無料枠の超過 | サービス停止 | 書き込みは 1 日数十行で上限の 0.1% 以下。監視不要 |
-| シークレットパスの漏洩 | 不正アクセス | Workers Secrets のローテーションで即座に無効化可能。将来は OAuth 化で根本対策 |
 | Cloudflare Workers の互換性変更 | ランタイムエラー | `compatibility_date` の固定 + Renovate による依存の継続追従 |
