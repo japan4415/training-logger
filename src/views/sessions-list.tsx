@@ -93,7 +93,7 @@ function SessionListContent(props: {
 					href={`/?month=${toMonthParam(prev.year, prev.month)}`}
 					hx-get={`/?month=${toMonthParam(prev.year, prev.month)}`}
 					hx-target="#session-content"
-					hx-swap="innerHTML"
+					hx-swap="innerHTML transition:true"
 					hx-push-url="true"
 					class="month-nav-btn"
 				>
@@ -104,7 +104,7 @@ function SessionListContent(props: {
 					href={`/?month=${toMonthParam(next.year, next.month)}`}
 					hx-get={`/?month=${toMonthParam(next.year, next.month)}`}
 					hx-target="#session-content"
-					hx-swap="innerHTML"
+					hx-swap="innerHTML transition:true"
 					hx-push-url="true"
 					class="month-nav-btn"
 				>

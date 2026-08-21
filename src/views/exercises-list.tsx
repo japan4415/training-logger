@@ -108,7 +108,7 @@ const CategoryTabs: FC<{
 					type="button"
 					hx-get={url}
 					hx-target="#exercises-content"
-					hx-swap="innerHTML"
+					hx-swap="innerHTML transition:true"
 					hx-push-url="true"
 					class={isActive ? "tab active" : "tab"}
 				>
