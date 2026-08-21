@@ -210,24 +210,29 @@ htmx を使い、ページ全体の再読み込みなしで部分更新を行う
 
 ```html
 <!-- 月別ナビゲーション: セッション一覧の部分更新 -->
-<button hx-get="/api/sessions?month=2026-07"
-        hx-target="#session-list"
-        hx-swap="innerHTML">
+<!-- SSR ルート自身（GET /）に HX-Request ヘッダー付きでリクエストし、部分 HTML を取得する -->
+<a href="/?month=2026-07"
+   hx-get="/?month=2026-07"
+   hx-target="#session-content"
+   hx-swap="innerHTML"
+   hx-push-url="true">
   前月
-</button>
+</a>
 
-<div id="session-list">
-  <!-- セッションカード一覧がここに挿入される -->
+<div id="session-content">
+  <!-- 月ナビゲーション + セッションカード一覧がここに挿入される -->
 </div>
 ```
 
 ```html
 <!-- 種目別進捗: 期間フィルタ -->
-<button hx-get="/api/exercises/1/stats?period=3m"
-        hx-target="#chart-container"
-        hx-swap="innerHTML">
+<!-- SSR ルート自身（GET /exercises/:id）に HX-Request ヘッダー付きでリクエストする -->
+<a href="/exercises/1?period=3m"
+   hx-get="/exercises/1?period=3m"
+   hx-target="#chart-container"
+   hx-swap="innerHTML">
   3ヶ月
-</button>
+</a>
 ```
 
 htmx のリクエストには `HX-Request` ヘッダーが付与される。サーバ側ではこのヘッダーを検出し、部分 HTML（レイアウトなし）を返すか、フルページ HTML を返すかを切り替える。
