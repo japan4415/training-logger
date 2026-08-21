@@ -73,6 +73,20 @@ function formatSet(
 	}
 }
 
+/** Render a group of sets, each on its own line */
+function renderSetItems(
+	category: SetTableProps["category"],
+	sets: SetRow[],
+): ReturnType<typeof SetTable> {
+	return (
+		<>
+			{sets.map((s) => (
+				<div class="set-item">{formatSet(category, s)}</div>
+			))}
+		</>
+	);
+}
+
 export function SetTable(props: SetTableProps) {
 	const { category, sets } = props;
 	const planned = sets.filter((s) => s.is_planned === 1);
@@ -88,12 +102,12 @@ export function SetTable(props: SetTableProps) {
 		return (
 			<div class="set-display set-display-comparison">
 				<div class="set-planned">
-					<span class="set-label">計画:</span>{" "}
-					{planned.map((s) => formatSet(category, s)).join(", ")}
+					<span class="set-label">計画:</span>
+					{renderSetItems(category, planned)}
 				</div>
 				<div class="set-actual">
-					<span class="set-label">実績:</span>{" "}
-					{actual.map((s) => formatSet(category, s)).join(", ")}
+					<span class="set-label">実績:</span>
+					{renderSetItems(category, actual)}
 				</div>
 			</div>
 		);
@@ -101,9 +115,7 @@ export function SetTable(props: SetTableProps) {
 
 	return (
 		<div class="set-display">
-			{actual.length > 0
-				? actual.map((s) => formatSet(category, s)).join(", ")
-				: planned.map((s) => formatSet(category, s)).join(", ")}
+			{renderSetItems(category, actual.length > 0 ? actual : planned)}
 		</div>
 	);
 }
