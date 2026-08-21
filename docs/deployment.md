@@ -27,7 +27,11 @@
   // Observability: console.log/error の出力とリクエストトレースを有効化
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
+    "head_sampling_rate": 1,
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
   }
 }
 ```
