@@ -115,6 +115,40 @@ export async function getRecentSessions(
 }
 
 /**
+ * Update session metadata fields. Only specified (non-undefined) fields are updated.
+ * If no fields are provided, this is a no-op.
+ */
+export async function updateSession(
+	db: D1Database,
+	id: number,
+	params: { goal?: string; bodyCondition?: string; notes?: string },
+): Promise<void> {
+	const updates: string[] = [];
+	const values: (string | number)[] = [];
+
+	if (params.goal !== undefined) {
+		updates.push("goal = ?");
+		values.push(params.goal);
+	}
+	if (params.bodyCondition !== undefined) {
+		updates.push("body_condition = ?");
+		values.push(params.bodyCondition);
+	}
+	if (params.notes !== undefined) {
+		updates.push("notes = ?");
+		values.push(params.notes);
+	}
+
+	if (updates.length === 0) return;
+
+	values.push(id);
+	await db
+		.prepare(`UPDATE workout_sessions SET ${updates.join(", ")} WHERE id = ?`)
+		.bind(...values)
+		.run();
+}
+
+/**
  * Delete a session by ID. Returns true if a row was deleted.
  * CASCADE deletes session_exercises and sets.
  */
