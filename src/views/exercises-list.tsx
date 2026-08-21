@@ -173,7 +173,7 @@ export function registerExerciseListRoutes(
 		}
 
 		return c.html(
-			<Layout title="種目一覧 - training-logger" activeNav="exercises">
+			<Layout title="種目一覧" activeNav="exercises">
 				<h1>種目一覧</h1>
 				<div id="exercises-content">
 					<ExercisesPageContent

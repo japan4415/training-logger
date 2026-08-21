@@ -318,6 +318,7 @@ const PeriodFilter: FC<{
 					hx-get={`/exercises/${exerciseId}?period=${opt.value}`}
 					hx-target="#chart-section"
 					hx-swap="innerHTML"
+					hx-push-url="true"
 					class={isActive ? "period-btn active" : "period-btn"}
 				>
 					{opt.label}
@@ -544,10 +545,7 @@ export function registerExerciseProgressRoutes(
 		}
 
 		return c.html(
-			<Layout
-				title={`${exercise.name} - training-logger`}
-				activeNav="exercises"
-			>
+			<Layout title={exercise.name} activeNav="exercises">
 				<ExerciseInfo exercise={exercise} aliases={aliases} />
 				<div id="chart-section">
 					<ChartSectionContent
