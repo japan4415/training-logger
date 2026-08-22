@@ -106,6 +106,19 @@ export async function getSession(c: Context<{ Bindings: Bindings }>) {
 		return c.json({ error: "Session not found" }, 404);
 	}
 
+	// Collect unique target muscles from all exercises
+	const targetMusclesSet = new Set<string>();
+	for (const e of detail.exercises) {
+		if (e.exercise.target_muscles) {
+			for (const part of e.exercise.target_muscles.split(",")) {
+				const trimmed = part.trim();
+				if (trimmed) {
+					targetMusclesSet.add(trimmed);
+				}
+			}
+		}
+	}
+
 	const session = {
 		id: detail.session.id,
 		date: detail.session.session_date,
@@ -113,6 +126,7 @@ export async function getSession(c: Context<{ Bindings: Bindings }>) {
 		goal: detail.session.goal,
 		body_condition: detail.session.body_condition,
 		notes: detail.session.notes,
+		target_muscles_summary: [...targetMusclesSet],
 		exercises: detail.exercises.map((e) => ({
 			id: e.sessionExercise.id,
 			exercise_id: e.exercise.id,
@@ -120,6 +134,7 @@ export async function getSession(c: Context<{ Bindings: Bindings }>) {
 			status: e.sessionExercise.status,
 			equipment_note: e.sessionExercise.equipment_note,
 			form_cues: e.sessionExercise.form_cues,
+			target_muscles: e.exercise.target_muscles,
 			sets: e.sets.filter((s) => s.is_planned === 0),
 			planned_sets: e.sets.filter((s) => s.is_planned === 1),
 		})),

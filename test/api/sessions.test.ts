@@ -17,6 +17,7 @@ async function seedTestData() {
 		name: "ベンチプレス",
 		category: "strength",
 		aliases: ["Bench Press"],
+		target_muscles: "胸, 三頭筋",
 	});
 	const { exercise: walking } = await registerExercise(env.DB, {
 		name: "ウォーキング",
@@ -278,6 +279,57 @@ describe("Sessions API", () => {
 		it("returns 400 for non-integer session ID", async () => {
 			const { res } = await fetchJson("/api/sessions/1.5");
 			expect(res.status).toBe(400);
+		});
+
+		it("includes target_muscles_summary with deduplicated muscles", async () => {
+			const { s1 } = await seedTestData();
+			const { body } = await fetchJson(`/api/sessions/${s1.id}`);
+
+			const session = body.session as Record<string, unknown>;
+			const summary = session.target_muscles_summary as string[];
+			// Session 1 has ベンチプレス (target_muscles: "胸, 三頭筋") and ウォーキング (null)
+			expect(summary).toContain("胸");
+			expect(summary).toContain("三頭筋");
+			expect(summary).toHaveLength(2);
+		});
+
+		it("includes target_muscles per exercise", async () => {
+			const { s1 } = await seedTestData();
+			const { body } = await fetchJson(`/api/sessions/${s1.id}`);
+
+			const session = body.session as Record<string, unknown>;
+			const exercises = session.exercises as Array<Record<string, unknown>>;
+			const bench = exercises.find((e) => e.name === "ベンチプレス") as Record<
+				string,
+				unknown
+			>;
+			const walk = exercises.find((e) => e.name === "ウォーキング") as Record<
+				string,
+				unknown
+			>;
+
+			expect(bench.target_muscles).toBe("胸, 三頭筋");
+			expect(walk.target_muscles).toBeNull();
+		});
+
+		it("returns empty target_muscles_summary when no exercises have target_muscles", async () => {
+			// Create a session with only exercises that have null target_muscles
+			const { exercise: stretch } = await registerExercise(env.DB, {
+				name: "ストレッチ",
+				category: "flexibility",
+			});
+			const { session: s3 } = await getOrCreateSession(env.DB, {
+				sessionDate: "2026-09-01",
+			});
+			await createSessionExercise(env.DB, {
+				sessionId: s3.id,
+				exerciseId: stretch.id,
+			});
+
+			const { body } = await fetchJson(`/api/sessions/${s3.id}`);
+			const session = body.session as Record<string, unknown>;
+			const summary = session.target_muscles_summary as string[];
+			expect(summary).toHaveLength(0);
 		});
 	});
 });

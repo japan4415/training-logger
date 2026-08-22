@@ -1,4 +1,6 @@
 import type { Context } from "hono";
+import type { FC } from "hono/jsx";
+import type { SessionExerciseDetail } from "../db/queries.js";
 import { getSessionDetail } from "../db/queries.js";
 import type { Bindings } from "../env.js";
 import { formatDateWithDay } from "./components/session-card.js";
@@ -20,6 +22,42 @@ function statusIcon(status: "planned" | "completed" | "skipped"): string {
 function statusClass(status: "planned" | "completed" | "skipped"): string {
 	return `status-${status}`;
 }
+
+/**
+ * Collect unique target muscle names from all exercises in a session.
+ * Splits comma-separated values, trims whitespace, and deduplicates.
+ * Exercises with null target_muscles are skipped.
+ */
+function collectTargetMuscles(exercises: SessionExerciseDetail[]): string[] {
+	const muscleSet = new Set<string>();
+	for (const { exercise } of exercises) {
+		if (exercise.target_muscles) {
+			for (const part of exercise.target_muscles.split(",")) {
+				const trimmed = part.trim();
+				if (trimmed) {
+					muscleSet.add(trimmed);
+				}
+			}
+		}
+	}
+	return [...muscleSet];
+}
+
+const TargetMusclesSummary: FC<{ muscles: string[] }> = ({ muscles }) => {
+	if (muscles.length === 0) return null;
+	return (
+		<div class="target-muscles-summary">
+			<span class="meta-label">鍛えた部位:</span>
+			<div class="target-muscles-tags">
+				{muscles.map((muscle) => (
+					<span class="target-muscle-tag" key={muscle}>
+						{muscle}
+					</span>
+				))}
+			</div>
+		</div>
+	);
+};
 
 interface AdjacentSession {
 	id: number;
@@ -68,6 +106,7 @@ export async function sessionDetailHandler(
 		.first<AdjacentSession>();
 
 	const { session, exercises } = detail;
+	const targetMuscles = collectTargetMuscles(exercises);
 
 	return c.html(
 		<Layout title="セッション詳細" activeNav="sessions">
@@ -108,6 +147,9 @@ export async function sessionDetailHandler(
 						<span class="meta-label">Notes:</span> {session.notes ?? "-"}
 					</div>
 				</div>
+
+				{/* Target muscles summary */}
+				<TargetMusclesSummary muscles={targetMuscles} />
 
 				{/* Exercise list */}
 				{exercises.length === 0 ? (

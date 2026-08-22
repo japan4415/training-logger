@@ -25,19 +25,19 @@ async function seedTestData(db: D1Database): Promise<void> {
 	await db.batch([
 		db
 			.prepare(
-				"INSERT INTO exercises (id, name, category, equipment) VALUES (?, ?, ?, ?)",
+				"INSERT INTO exercises (id, name, category, equipment, target_muscles) VALUES (?, ?, ?, ?, ?)",
 			)
-			.bind(1, "ベンチプレス", "strength", null),
+			.bind(1, "ベンチプレス", "strength", null, "胸, 三頭筋"),
 		db
 			.prepare(
-				"INSERT INTO exercises (id, name, category, equipment) VALUES (?, ?, ?, ?)",
+				"INSERT INTO exercises (id, name, category, equipment, target_muscles) VALUES (?, ?, ?, ?, ?)",
 			)
-			.bind(2, "ウォーキング", "cardio", "トレッドミル"),
+			.bind(2, "ウォーキング", "cardio", "トレッドミル", null),
 		db
 			.prepare(
-				"INSERT INTO exercises (id, name, category, equipment) VALUES (?, ?, ?, ?)",
+				"INSERT INTO exercises (id, name, category, equipment, target_muscles) VALUES (?, ?, ?, ?, ?)",
 			)
-			.bind(3, "レッグレイズ", "strength", null),
+			.bind(3, "レッグレイズ", "strength", null, "腹筋"),
 	]);
 
 	// Create sessions
@@ -305,6 +305,43 @@ describe("Session views", () => {
 		it("returns 400 for invalid session ID", async () => {
 			const res = await request("/sessions/abc");
 			expect(res.status).toBe(400);
+		});
+
+		it("displays target muscles summary for session with target_muscles", async () => {
+			const res = await request("/sessions/1");
+			const html = await res.text();
+			// Session 1 has ベンチプレス (target_muscles: "胸, 三頭筋") and ウォーキング (null)
+			expect(html).toContain("鍛えた部位:");
+			expect(html).toContain("胸");
+			expect(html).toContain("三頭筋");
+		});
+
+		it("displays target muscles from multiple exercises with deduplication", async () => {
+			const res = await request("/sessions/2");
+			const html = await res.text();
+			// Session 2 has ウォーキング (null) and レッグレイズ (target_muscles: "腹筋")
+			expect(html).toContain("鍛えた部位:");
+			expect(html).toContain("腹筋");
+		});
+
+		it("does not display target muscles section when no exercises have target_muscles", async () => {
+			// Create a session with only exercises that have null target_muscles
+			const db = env.DB;
+			await db
+				.prepare(
+					"INSERT INTO workout_sessions (id, session_date, goal) VALUES (?, ?, ?)",
+				)
+				.bind(10, "2026-09-01", "テスト")
+				.run();
+			await db
+				.prepare(
+					"INSERT INTO session_exercises (id, session_id, exercise_id, display_order, status) VALUES (?, ?, ?, ?, ?)",
+				)
+				.bind(10, 10, 2, 1, "completed")
+				.run();
+			const res = await request("/sessions/10");
+			const html = await res.text();
+			expect(html).not.toContain("鍛えた部位:");
 		});
 	});
 });
