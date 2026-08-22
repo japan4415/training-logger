@@ -1,5 +1,9 @@
 import type { Context } from "hono";
-import { getHistory, getSessionDetail } from "../db/queries.js";
+import {
+	aggregateTargetMuscles,
+	getHistory,
+	getSessionDetail,
+} from "../db/queries.js";
 import type { Bindings } from "../env.js";
 
 /** Derive day of week (Japanese) from YYYY-MM-DD string. */
@@ -113,6 +117,7 @@ export async function getSession(c: Context<{ Bindings: Bindings }>) {
 		goal: detail.session.goal,
 		body_condition: detail.session.body_condition,
 		notes: detail.session.notes,
+		target_muscles_summary: aggregateTargetMuscles(detail.exercises),
 		exercises: detail.exercises.map((e) => ({
 			id: e.sessionExercise.id,
 			exercise_id: e.exercise.id,
@@ -120,6 +125,7 @@ export async function getSession(c: Context<{ Bindings: Bindings }>) {
 			status: e.sessionExercise.status,
 			equipment_note: e.sessionExercise.equipment_note,
 			form_cues: e.sessionExercise.form_cues,
+			target_muscles: e.exercise.target_muscles,
 			sets: e.sets.filter((s) => s.is_planned === 0),
 			planned_sets: e.sets.filter((s) => s.is_planned === 1),
 		})),

@@ -315,6 +315,34 @@ a:hover {
 	color: var(--label-secondary);
 }
 
+/* Target Muscles Summary */
+.target-muscles-summary {
+	background: var(--bg-tertiary);
+	border-radius: var(--radius-card);
+	padding: 14px 16px;
+	border: 1px solid var(--separator);
+	box-shadow: var(--shadow);
+}
+
+.target-muscles-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.target-muscle-tag {
+	display: inline-block;
+	font-size: 13px;
+	line-height: 1.35;
+	letter-spacing: 0.01em;
+	padding: 4px 10px;
+	background: var(--accent-hover);
+	color: var(--accent);
+	border-radius: 100px;
+	font-weight: 500;
+}
+
 /* === Exercise Cards (detail page & list page) === */
 .exercise-list {
 	display: flex;

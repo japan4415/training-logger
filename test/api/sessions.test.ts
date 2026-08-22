@@ -17,6 +17,7 @@ async function seedTestData() {
 		name: "ベンチプレス",
 		category: "strength",
 		aliases: ["Bench Press"],
+		target_muscles: "胸, 三頭筋",
 	});
 	const { exercise: walking } = await registerExercise(env.DB, {
 		name: "ウォーキング",
@@ -278,6 +279,117 @@ describe("Sessions API", () => {
 		it("returns 400 for non-integer session ID", async () => {
 			const { res } = await fetchJson("/api/sessions/1.5");
 			expect(res.status).toBe(400);
+		});
+
+		it("includes target_muscles_summary with deduplicated muscles", async () => {
+			const { s1 } = await seedTestData();
+			const { body } = await fetchJson(`/api/sessions/${s1.id}`);
+
+			const session = body.session as Record<string, unknown>;
+			const summary = session.target_muscles_summary as string[];
+			// Session 1 has ベンチプレス (target_muscles: "胸, 三頭筋") and ウォーキング (null)
+			expect(summary).toContain("胸");
+			expect(summary).toContain("三頭筋");
+			expect(summary).toHaveLength(2);
+		});
+
+		it("includes target_muscles per exercise", async () => {
+			const { s1 } = await seedTestData();
+			const { body } = await fetchJson(`/api/sessions/${s1.id}`);
+
+			const session = body.session as Record<string, unknown>;
+			const exercises = session.exercises as Array<Record<string, unknown>>;
+			const bench = exercises.find((e) => e.name === "ベンチプレス") as Record<
+				string,
+				unknown
+			>;
+			const walk = exercises.find((e) => e.name === "ウォーキング") as Record<
+				string,
+				unknown
+			>;
+
+			expect(bench.target_muscles).toBe("胸, 三頭筋");
+			expect(walk.target_muscles).toBeNull();
+		});
+
+		it("returns empty target_muscles_summary when no exercises have target_muscles", async () => {
+			// Create a session with only exercises that have null target_muscles
+			const { exercise: stretch } = await registerExercise(env.DB, {
+				name: "ストレッチ",
+				category: "flexibility",
+			});
+			const { session: s3 } = await getOrCreateSession(env.DB, {
+				sessionDate: "2026-09-01",
+			});
+			await createSessionExercise(env.DB, {
+				sessionId: s3.id,
+				exerciseId: stretch.id,
+			});
+
+			const { body } = await fetchJson(`/api/sessions/${s3.id}`);
+			const session = body.session as Record<string, unknown>;
+			const summary = session.target_muscles_summary as string[];
+			expect(summary).toHaveLength(0);
+		});
+
+		it("excludes skipped and planned exercises from target_muscles_summary", async () => {
+			const { exercise: skippedEx } = await registerExercise(env.DB, {
+				name: "スキップ種目",
+				category: "strength",
+				target_muscles: "肩",
+			});
+			const { exercise: plannedEx } = await registerExercise(env.DB, {
+				name: "計画種目",
+				category: "strength",
+				target_muscles: "腕",
+			});
+			const { exercise: completedEx } = await registerExercise(env.DB, {
+				name: "完了種目",
+				category: "strength",
+				target_muscles: "脚",
+			});
+
+			const { session: s4 } = await getOrCreateSession(env.DB, {
+				sessionDate: "2026-10-01",
+			});
+
+			// skipped exercise
+			const seSkipped = await createSessionExercise(env.DB, {
+				sessionId: s4.id,
+				exerciseId: skippedEx.id,
+			});
+			await env.DB.prepare(
+				"UPDATE session_exercises SET status = ? WHERE id = ?",
+			)
+				.bind("skipped", seSkipped.id)
+				.run();
+
+			// planned exercise
+			const sePlanned = await createSessionExercise(env.DB, {
+				sessionId: s4.id,
+				exerciseId: plannedEx.id,
+			});
+			await env.DB.prepare(
+				"UPDATE session_exercises SET status = ? WHERE id = ?",
+			)
+				.bind("planned", sePlanned.id)
+				.run();
+
+			// completed exercise
+			await createSessionExercise(env.DB, {
+				sessionId: s4.id,
+				exerciseId: completedEx.id,
+			});
+
+			const { body } = await fetchJson(`/api/sessions/${s4.id}`);
+			const session = body.session as Record<string, unknown>;
+			const summary = session.target_muscles_summary as string[];
+
+			// Only completed exercise's target_muscles should be in the summary
+			expect(summary).toContain("脚");
+			expect(summary).not.toContain("肩");
+			expect(summary).not.toContain("腕");
+			expect(summary).toHaveLength(1);
 		});
 	});
 });

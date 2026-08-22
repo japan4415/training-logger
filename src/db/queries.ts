@@ -233,6 +233,30 @@ export async function getExerciseStats(
 	};
 }
 
+/**
+ * Aggregate unique target muscle names from completed exercises in a session.
+ * Only exercises with status 'completed' are included.
+ * Splits comma-separated values, trims whitespace, and deduplicates.
+ * Exercises with null target_muscles are skipped.
+ */
+export function aggregateTargetMuscles(
+	exercises: SessionExerciseDetail[],
+): string[] {
+	const muscleSet = new Set<string>();
+	for (const { sessionExercise, exercise } of exercises) {
+		if (sessionExercise.status !== "completed") continue;
+		if (exercise.target_muscles) {
+			for (const part of exercise.target_muscles.split(",")) {
+				const trimmed = part.trim();
+				if (trimmed) {
+					muscleSet.add(trimmed);
+				}
+			}
+		}
+	}
+	return [...muscleSet];
+}
+
 // ---- Internal helpers ----
 
 /** Joined row type for session_exercises + exercises query */
