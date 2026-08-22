@@ -92,9 +92,9 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 
 ### Phase 3: 運用改善
 
-- CD パイプライン（merge → 自動デプロイ）
+- CD パイプライン（Cloudflare Workers Builds による Git 連携で merge → 自動デプロイ）
 - E2E テスト
-- ドキュメント追従の自動化
+- ドキュメント追従の最終化
 
 各フェーズの詳細なタスクと優先順位は [roadmap.md](./roadmap.md) を参照。
 

@@ -139,7 +139,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 ### log_workout
 
-1 日分のワークアウト記録。7 ツールの中核となるツール。
+1 日分のワークアウト記録。6 ツールの中核となるツール。
 
 **説明文** (LLM 向け):
 
@@ -480,7 +480,15 @@ LLM のツール選択精度はツール数が増えるほど低下する。日�
 
 ### サーバーレベルの instructions
 
-`McpServer` コンストラクタの `instructions` フィールド（MCP 仕様の `InitializeResult.instructions`）に、ツール横断の運用ルール（種目登録前の重複確認、日時の JST 解釈、同日追記の挙動など）を記述している。各ツールの `description` は個々のツールの用途・引数を説明する場であり、横断ルールまで繰り返すと冗長になるため、サーバーレベルの instructions で一元管理する。Claude の Skill（`claude_skill`）ではなく MCP ネイティブの `instructions` を採用したのは、ChatGPT を含むすべての MCP クライアントに配信でき、クライアント固有の設定に依存しないためである。
+`McpServer` コンストラクタの `instructions` フィールド（MCP 仕様の `InitializeResult.instructions`）に、ツール横断の運用ルールを以下の 5 セクションで記述している:
+
+1. **種目の登録** -- 新規登録前の重複確認（日本語名・英語名の両方で検索）
+2. **日時の扱い** -- 全日付は Asia/Tokyo (JST) 基準。相対表現（「昨日」「先週月曜」等）も JST で解釈
+3. **記録の運用** -- 同日の再呼び出しは追記（上書きではない）。修正は `update_workout`、削除は `delete_workout`
+4. **対応できない入力** -- スキーマで表現できないパラメータに遭遇した場合の案内と issue 起票の誘導
+5. **手書きノートの速記法** -- `reps/weight` 形式の速記（例: 「20/10」= 20回・重量10）の解釈ルール
+
+各ツールの `description` は個々のツールの用途・引数を説明する場であり、横断ルールまで繰り返すと冗長になるため、サーバーレベルの instructions で一元管理する。Claude の Skill（`claude_skill`）ではなく MCP ネイティブの `instructions` を採用したのは、ChatGPT を含むすべての MCP クライアントに配信でき、クライアント固有の設定に依存しないためである。
 
 ## 接続手順
 

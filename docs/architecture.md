@@ -116,8 +116,8 @@ sequenceDiagram
     Browser->>Worker: リクエスト
     Worker->>D1: SELECT workout sessions
     Worker-->>Browser: SSR HTML
-    Browser->>Worker: htmx GET /api/sessions/123
-    Worker->>D1: SELECT session detail
+    Browser->>Worker: htmx GET /?month=2026-07<br/>(HX-Request ヘッダー付き)
+    Worker->>D1: SELECT workout sessions
     Worker-->>Browser: HTML パーシャル
 ```
 
@@ -129,7 +129,7 @@ training-logger/
 ├── CLAUDE.md                    # Claude Code 向けプロジェクト指示
 ├── docs/
 │   ├── overview.md              # 背景・動機・ユーザーフロー・スコープ
-│   ├── architecture.md          # 技術スタック・システム構成・認証・リクエストフロー
+│   ├── architecture.md          # 技術スタック・システム構成・リクエストフロー
 │   ├── database.md              # テーブル設計・ER 図・マイグレーション方針
 │   ├── mcp-server.md            # MCP ツール仕様・エンドポイント・接続手順
 │   ├── web-ui.md                # Web UI 画面設計・SSR 構成
@@ -140,7 +140,7 @@ training-logger/
 │   ├── index.ts                 # Hono app エントリポイント、ルーティング統合
 │   ├── env.ts                   # Bindings 型定義 (DB)
 │   ├── db/                      # データアクセス層
-│   │   ├── schema.ts            # テーブル定義の TypeScript 型
+│   │   ├── types.ts             # テーブル定義の TypeScript 型
 │   │   ├── exercises.ts         # 種目の CRUD・別名解決
 │   │   ├── sessions.ts          # セッションの CRUD
 │   │   ├── records.ts           # セット記録の CRUD
@@ -149,12 +149,9 @@ training-logger/
 │   │   ├── handler.ts           # Streamable HTTP ハンドラ (Hono ミドルウェア)
 │   │   ├── server.ts            # McpServer 生成・ツール登録集約
 │   │   └── tools/               # 各 MCP ツールの実装
-│   │       ├── search-exercises.ts
-│   │       ├── register-exercise.ts
-│   │       ├── log-workout.ts
-│   │       ├── update-workout.ts
-│   │       ├── delete-workout.ts
-│   │       └── get-history.ts
+│   │       ├── exercises.ts     # search_exercises, register_exercise
+│   │       ├── workouts.ts      # log_workout, update_workout, delete_workout
+│   │       └── history.ts       # get_history
 │   ├── api/                     # REST API (Web UI 向け、読み取り専用)
 │   │   ├── routes.ts            # API ルーティング
 │   │   ├── sessions.ts          # セッション一覧・詳細
@@ -177,12 +174,12 @@ training-logger/
 │   └── README.md
 ├── test/                        # Vitest テスト
 │   ├── db/                      # データアクセス層のテスト
-│   ├── mcp/                     # MCP ツールのテスト
-│   └── api/                     # REST API のテスト
+│   ├── mcp/                     # MCP ハンドラ・ツールのテスト
+│   ├── api/                     # REST API のテスト
+│   └── views/                   # SSR ビューのテスト
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml               # CI (typecheck, lint, test)
-│   │   └── deploy.yml           # CD (Cloudflare Workers デプロイ)
+│   │   └── ci.yml               # CI (typecheck, lint, D1 マイグレーション検証, test)
 │   └── ISSUE_TEMPLATE/
 ├── wrangler.jsonc               # Cloudflare Workers 設定
 ├── tsconfig.json
@@ -198,7 +195,7 @@ training-logger/
 
 **`src/mcp/`** - MCP サーバの実装。各ツールは薄く保ち、入力バリデーション（Zod）とレスポンス整形のみを担当する。ビジネスロジックは `db/` に委譲する。
 
-**`src/api/`** - Web UI 向けの REST API。読み取り専用。htmx からのリクエストに HTML パーシャルを返す。
+**`src/api/`** - Web UI 向けの REST API。読み取り専用。純粋な JSON API として実装する。htmx の部分更新は SSR ルート（`src/views/`）自身が `HX-Request` ヘッダーを検出して処理する。
 
 **`src/views/`** - Hono JSX によるサーバサイドレンダリング。htmx 属性を埋め込んだ HTML を生成する。
 
