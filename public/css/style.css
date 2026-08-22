@@ -448,6 +448,10 @@ a.exercise-card:active {
 	color: var(--label);
 }
 
+.set-item {
+	padding: 1px 0;
+}
+
 .set-label {
 	font-weight: 600;
 	font-size: 11px;
