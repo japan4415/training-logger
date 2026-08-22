@@ -343,5 +343,64 @@ describe("Session views", () => {
 			const html = await res.text();
 			expect(html).not.toContain("鍛えた部位:");
 		});
+
+		it("excludes skipped and planned exercises from target muscles summary", async () => {
+			const db = env.DB;
+			// Create a session with mixed statuses
+			await db
+				.prepare(
+					"INSERT INTO workout_sessions (id, session_date, goal) VALUES (?, ?, ?)",
+				)
+				.bind(20, "2026-10-01", "ステータステスト")
+				.run();
+			// Exercise with target_muscles, status=skipped
+			await db
+				.prepare(
+					"INSERT INTO exercises (id, name, category, target_muscles) VALUES (?, ?, ?, ?)",
+				)
+				.bind(20, "スキップ種目", "strength", "肩")
+				.run();
+			await db
+				.prepare(
+					"INSERT INTO session_exercises (id, session_id, exercise_id, display_order, status) VALUES (?, ?, ?, ?, ?)",
+				)
+				.bind(20, 20, 20, 1, "skipped")
+				.run();
+			// Exercise with target_muscles, status=planned
+			await db
+				.prepare(
+					"INSERT INTO exercises (id, name, category, target_muscles) VALUES (?, ?, ?, ?)",
+				)
+				.bind(21, "計画種目", "strength", "腕")
+				.run();
+			await db
+				.prepare(
+					"INSERT INTO session_exercises (id, session_id, exercise_id, display_order, status) VALUES (?, ?, ?, ?, ?)",
+				)
+				.bind(21, 20, 21, 2, "planned")
+				.run();
+			// Exercise with target_muscles, status=completed
+			await db
+				.prepare(
+					"INSERT INTO exercises (id, name, category, target_muscles) VALUES (?, ?, ?, ?)",
+				)
+				.bind(22, "完了種目", "strength", "脚")
+				.run();
+			await db
+				.prepare(
+					"INSERT INTO session_exercises (id, session_id, exercise_id, display_order, status) VALUES (?, ?, ?, ?, ?)",
+				)
+				.bind(22, 20, 22, 3, "completed")
+				.run();
+
+			const res = await request("/sessions/20");
+			const html = await res.text();
+			// Only completed exercise's target_muscles should appear
+			expect(html).toContain("鍛えた部位:");
+			expect(html).toContain("脚");
+			// Skipped and planned exercises' target_muscles should NOT appear in the summary tags
+			expect(html).not.toContain('<span class="target-muscle-tag">肩</span>');
+			expect(html).not.toContain('<span class="target-muscle-tag">腕</span>');
+		});
 	});
 });

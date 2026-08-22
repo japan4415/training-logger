@@ -181,7 +181,7 @@ Web UI が使用する REST API の一覧。全エンドポイントは読み取
 | パス | メソッド | 説明 | クエリパラメータ | レスポンス概形 |
 |------|----------|------|------------------|----------------|
 | `/api/sessions` | GET | セッション一覧 | `month` (YYYY-MM), `limit`, `offset` | `{sessions: [{id, date, goal, exercise_count, exercise_names[]}], total}` |
-| `/api/sessions/:id` | GET | セッション詳細 | -- | `{session: {id, date, goal, body_condition, notes, exercises: [{id, exercise_id, name, status, equipment_note, form_cues, sets[], planned_sets[]}]}}` |
+| `/api/sessions/:id` | GET | セッション詳細 | -- | `{session: {id, date, goal, body_condition, notes, target_muscles_summary[], exercises: [{id, exercise_id, name, status, equipment_note, form_cues, target_muscles, sets[], planned_sets[]}]}}` |
 | `/api/exercises` | GET | 種目一覧 | `category`, `q` | `{exercises: [{id, name, category, equipment, target_muscles, last_performed, total_sessions}]}` |
 | `/api/exercises/:id` | GET | 種目詳細 | -- | `{exercise: {id, name, category, equipment, target_muscles, aliases[]}}` |
 | `/api/exercises/:id/stats` | GET | 種目別統計 | `from`, `to`, `period` (1m/3m/6m/all) | `{stats: [{date, max_weight_by_unit, total_reps, total_sets, sets[]}]}` |

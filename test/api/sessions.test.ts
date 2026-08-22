@@ -331,5 +331,65 @@ describe("Sessions API", () => {
 			const summary = session.target_muscles_summary as string[];
 			expect(summary).toHaveLength(0);
 		});
+
+		it("excludes skipped and planned exercises from target_muscles_summary", async () => {
+			const { exercise: skippedEx } = await registerExercise(env.DB, {
+				name: "スキップ種目",
+				category: "strength",
+				target_muscles: "肩",
+			});
+			const { exercise: plannedEx } = await registerExercise(env.DB, {
+				name: "計画種目",
+				category: "strength",
+				target_muscles: "腕",
+			});
+			const { exercise: completedEx } = await registerExercise(env.DB, {
+				name: "完了種目",
+				category: "strength",
+				target_muscles: "脚",
+			});
+
+			const { session: s4 } = await getOrCreateSession(env.DB, {
+				sessionDate: "2026-10-01",
+			});
+
+			// skipped exercise
+			const seSkipped = await createSessionExercise(env.DB, {
+				sessionId: s4.id,
+				exerciseId: skippedEx.id,
+			});
+			await env.DB.prepare(
+				"UPDATE session_exercises SET status = ? WHERE id = ?",
+			)
+				.bind("skipped", seSkipped.id)
+				.run();
+
+			// planned exercise
+			const sePlanned = await createSessionExercise(env.DB, {
+				sessionId: s4.id,
+				exerciseId: plannedEx.id,
+			});
+			await env.DB.prepare(
+				"UPDATE session_exercises SET status = ? WHERE id = ?",
+			)
+				.bind("planned", sePlanned.id)
+				.run();
+
+			// completed exercise
+			await createSessionExercise(env.DB, {
+				sessionId: s4.id,
+				exerciseId: completedEx.id,
+			});
+
+			const { body } = await fetchJson(`/api/sessions/${s4.id}`);
+			const session = body.session as Record<string, unknown>;
+			const summary = session.target_muscles_summary as string[];
+
+			// Only completed exercise's target_muscles should be in the summary
+			expect(summary).toContain("脚");
+			expect(summary).not.toContain("肩");
+			expect(summary).not.toContain("腕");
+			expect(summary).toHaveLength(1);
+		});
 	});
 });
