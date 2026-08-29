@@ -11,7 +11,7 @@
     "format": "biome format --write .",
     "test": "vitest run"
   },
-  "packageManager": "pnpm@10.11.0",
+  "packageManager": "pnpm@10.34.5",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "hono": "^4.13.3",
