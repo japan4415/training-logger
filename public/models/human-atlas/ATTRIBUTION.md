@@ -2,7 +2,7 @@
 
 Adapted from [human-atlas](https://github.com/ashemag/human-atlas), commit `1c38bf35c254a891200d3cedecfd57abebe83d8d`. The upstream software is MIT licensed; its license is included in HUMAN-ATLAS-LICENSE.txt.
 
-Training Logger adaptations: retained 128 major training, forearm, and hip-adductor muscular meshes plus the Skin mesh; omitted other anatomy systems and concept hierarchy; repacked existing vertex data into a single gzip-compressed binary. No geometry was modified. Training-region grouping and display colors are application annotations. The upstream dataset has no latissimus dorsi or rectus abdominis meshes; the regional display is illustrative.
+Training Logger adaptations: retained 150 training muscular meshes, including forearms, hip adductors and flexors, rotator cuff, spinal extensors, and tibialis anterior plus the Skin mesh; omitted other anatomy systems and concept hierarchy; repacked existing vertex data into a single gzip-compressed binary. No geometry was modified. Corrected the upstream system metadata of tensor fasciae latae (FJ1438/FJ1438M), tibialis anterior (FJ1439/FJ1439M), and subscapularis (FJ1504/FJ1504M) to muscular; retained their original part IDs, names, and concept IDs. Exercise-to-muscle assignments and display colors are application annotations. The upstream dataset has no latissimus dorsi or rectus abdominis meshes; these unavailable muscles must not be replaced with other muscles.
 
 The following attribution is preserved from the upstream repository:
 

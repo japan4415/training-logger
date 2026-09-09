@@ -188,6 +188,100 @@ describe("Sessions API", () => {
 	});
 
 	describe("GET /api/sessions/:id", () => {
+		it("merges completed exact assignments with primary precedence and preserves legacy summaries", async () => {
+			const { session } = await getOrCreateSession(env.DB, {
+				sessionDate: "2026-09-10",
+			});
+			const first = {
+				primary: ["FJ1394"],
+				secondary: ["FJ1437"],
+				unavailable: ["広背筋"],
+			};
+			const second = {
+				primary: ["FJ1437"],
+				secondary: ["FJ1394"],
+				unavailable: ["広背筋", "腹直筋"],
+			};
+			const excluded = {
+				primary: ["FJ1446"],
+				secondary: [],
+				unavailable: ["除外対象"],
+			};
+			const empty = { primary: [], secondary: [], unavailable: [] };
+			const fixtures = [
+				{
+					name: "完了1",
+					status: "completed" as const,
+					assignment: first,
+					target: "ふくらはぎ",
+				},
+				{
+					name: "完了2",
+					status: "completed" as const,
+					assignment: second,
+					target: "下腿",
+				},
+				{
+					name: "計画",
+					status: "planned" as const,
+					assignment: excluded,
+					target: "胸",
+				},
+				{
+					name: "スキップ",
+					status: "skipped" as const,
+					assignment: excluded,
+					target: "胸",
+				},
+				{
+					name: "従来",
+					status: "completed" as const,
+					assignment: null,
+					target: "肩",
+				},
+				{
+					name: "明示空",
+					status: "completed" as const,
+					assignment: empty,
+					target: "腕",
+				},
+			];
+			for (const fixture of fixtures) {
+				const { exercise } = await registerExercise(env.DB, {
+					name: fixture.name,
+					atlas_muscles: fixture.assignment,
+					target_muscles: fixture.target,
+				});
+				await createSessionExercise(env.DB, {
+					sessionId: session.id,
+					exerciseId: exercise.id,
+					status: fixture.status,
+				});
+			}
+			const { res, body } = await fetchJson(`/api/sessions/${session.id}`);
+			expect(res.status).toBe(200);
+			const result = body.session as Record<string, unknown>;
+			expect(result.atlas_muscles_summary).toEqual({
+				primary: ["FJ1394", "FJ1437"],
+				secondary: [],
+				unavailable: ["広背筋", "腹直筋"],
+			});
+			expect(result.target_muscles_summary).toEqual([
+				"ふくらはぎ",
+				"下腿",
+				"肩",
+				"腕",
+			]);
+			const exercises = result.exercises as Array<{
+				name: string;
+				atlas_muscles: unknown;
+			}>;
+			for (const fixture of fixtures)
+				expect(
+					exercises.find((exercise) => exercise.name === fixture.name)
+						?.atlas_muscles,
+				).toEqual(fixture.assignment);
+		});
 		it("returns session detail with exercises", async () => {
 			const { s1 } = await seedTestData();
 			const { res, body } = await fetchJson(`/api/sessions/${s1.id}`);

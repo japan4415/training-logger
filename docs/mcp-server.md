@@ -687,3 +687,13 @@ https://training-logger.discord.jp/mcp
 
 **LLM の応答**:
 > 8/16 の記録を登録しました! 9種目の実施記録（ウォーキング2回を含む）、計16セットを記録しています。レッグレイズは計画2セットに対して実績3セットも記録しました。
+
+## Atlas筋肉の管理
+
+`register_exercise` は任意の `atlas_muscles` を受け付ける。構造は `{primary: string[], secondary: string[], unavailable: string[]}`。primary/secondaryはFJ形式の配信済み筋肉ID、unavailableはAtlas未収録の筋肉名。省略時は既知種目の初期プロファイルを採用し、明示NULLは従来の部位メモによる参考表示へ戻す。3配列が空のオブジェクトは対象筋なしの明示指定。
+
+- `list_atlas_muscles(query?: string)`: ID・英語名・日本語名でカタログを検索し、`{id,name,label,groupLabel}` を返す。左右を含む正確なIDを確認してから割り当てる。筋肉の未収録を別筋で代用しない。
+- `set_exercise_muscles(exercise_id: number, atlas_muscles: object | null)`: 種目の割当全体を置き換える。種目IDは正の整数。不明ID・不明筋肉IDはエラーとし、DBを変更しない。
+- `search_exercises` / `register_exercise` のレスポンスに、デコード済み `atlas_muscles` を含む。
+
+primary/secondaryはそれぞれ最大200件、unavailableは最大50件・名称100文字。primaryとsecondaryに重複するIDはprimaryを優先する。RESTの種目詳細・一覧も `atlas_muscles` を返す。セッションAPIは従来の `target_muscles_summary` に加え、完了種目の明示割当を集約した `atlas_muscles_summary` と各種目の `atlas_muscles` を返す。NULLの従来値は新しいID集約には含めない。

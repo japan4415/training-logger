@@ -1,7 +1,7 @@
 import type { Context } from "hono";
-import { aggregateTargetMuscles, getSessionDetail } from "../db/queries.js";
+import { getSessionDetail } from "../db/queries.js";
 import type { Bindings } from "../env.js";
-import { MuscleMap } from "./components/muscle-map.js";
+import { getSessionAnatomy, MuscleMap } from "./components/muscle-map.js";
 import { formatDateWithDay } from "./components/session-card.js";
 import { SetTable } from "./components/set-table.js";
 import { Layout } from "./layout.js";
@@ -69,7 +69,7 @@ export async function sessionDetailHandler(
 		.first<AdjacentSession>();
 
 	const { session, exercises } = detail;
-	const targetMuscles = aggregateTargetMuscles(exercises);
+	const anatomy = getSessionAnatomy(exercises);
 
 	return c.html(
 		<Layout title="セッション詳細" activeNav="sessions">
@@ -112,7 +112,7 @@ export async function sessionDetailHandler(
 				</div>
 
 				{/* Target muscles summary */}
-				<MuscleMap muscles={targetMuscles} />
+				<MuscleMap anatomy={anatomy} />
 
 				{/* Exercise list */}
 				{exercises.length === 0 ? (

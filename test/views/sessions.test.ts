@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { Hono } from "hono";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import atlas from "../../public/models/human-atlas/atlas.json";
 import type { Bindings } from "../../src/env.js";
 import { registerSessionViews } from "../../src/views/sessions-list.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
@@ -19,8 +20,18 @@ async function request(
 	return app.fetch(req, env);
 }
 
+function idsForPatterns(patterns: string[]): string[] {
+	return atlas.parts
+		.filter(
+			(p) =>
+				p.system === "muscular" &&
+				patterns.some((pattern) => p.name.toLowerCase().includes(pattern)),
+		)
+		.map((p) => p.id);
+}
+
 function atlasPatterns(html: string): string[] {
-	const value = html.match(/data-muscles="([^"]*)"/)?.[1];
+	const value = html.match(/data-primary-ids="([^"]*)"/)?.[1];
 	expect(value).toBeDefined();
 	return JSON.parse(value?.replaceAll("&quot;", '"') ?? "[]");
 }
@@ -244,6 +255,45 @@ describe("Session views", () => {
 	});
 
 	describe("GET /sessions/:id (session detail)", () => {
+		it("merges only completed exact assignments and gives primary IDs precedence", async () => {
+			await env.DB.batch([
+				env.DB.prepare(
+					"UPDATE exercises SET atlas_muscles = ? WHERE id = 1",
+				).bind(
+					JSON.stringify({
+						primary: ["FJ1394"],
+						secondary: ["FJ1437"],
+						unavailable: [],
+					}),
+				),
+				env.DB.prepare(
+					"UPDATE exercises SET atlas_muscles = ? WHERE id = 2",
+				).bind(
+					JSON.stringify({
+						primary: ["FJ1437"],
+						secondary: ["FJ1394"],
+						unavailable: [],
+					}),
+				),
+				env.DB.prepare(
+					"UPDATE exercises SET atlas_muscles = ? WHERE id = 3",
+				).bind(
+					JSON.stringify({
+						primary: ["FJ1446"],
+						secondary: [],
+						unavailable: ["excluded"],
+					}),
+				),
+				env.DB.prepare(
+					"INSERT INTO session_exercises (id, session_id, exercise_id, display_order, status) VALUES (40, 1, 3, 3, 'planned'), (41, 1, 3, 4, 'skipped')",
+				),
+			]);
+			const html = await (await request("/sessions/1")).text();
+			expect(atlasPatterns(html)).toEqual(["FJ1394", "FJ1437"]);
+			expect(html).toContain('data-secondary-ids="[]"');
+			expect(html).not.toContain("excluded");
+			expect(html).toContain('class="atlas-count">2<small>対象</small>');
+		});
 		it("returns session detail with exercises and sets", async () => {
 			const res = await request("/sessions/1");
 			expect(res.status).toBe(200);
@@ -318,12 +368,11 @@ describe("Session views", () => {
 			const html = await res.text();
 			// Session 1 has ベンチプレス (target_muscles: "胸, 三頭筋") and ウォーキング (null)
 			expect(html).toContain('id="atlas-heading"');
-			expect(atlasPatterns(html)).toEqual([
-				"pectoralis major",
-				"triceps brachii",
-			]);
+			expect(atlasPatterns(html)).toEqual(
+				idsForPatterns(["pectoralis major", "triceps brachii"]),
+			);
 			expect(html).toContain("胸");
-			expect(html).toContain("三頭筋");
+			expect(html).toContain("上腕三頭筋");
 		});
 
 		it("displays target muscles from multiple exercises with deduplication", async () => {
@@ -335,9 +384,9 @@ describe("Session views", () => {
 			const res = await request("/sessions/2");
 			const html = await res.text();
 			expect(html).toContain('id="atlas-heading"');
-			expect(atlasPatterns(html)).toEqual(["external oblique"]);
+			expect(atlasPatterns(html)).toEqual(idsForPatterns(["external oblique"]));
 			expect(
-				html.match(/class="target-muscle-tag">腹筋<\/span>/g),
+				html.match(/class="target-muscle-tag">外腹斜筋<\/span>/g),
 			).toHaveLength(1);
 		});
 
@@ -346,8 +395,45 @@ describe("Session views", () => {
 				.bind(" , , ")
 				.run();
 			const html = await (await request("/sessions/1")).text();
-			expect(html).not.toContain("data-muscles=");
+			expect(html).not.toContain("data-primary-ids=");
 			expect(html).not.toContain('src="/js/muscle-atlas.js"');
+		});
+
+		it("loads the atlas for supported regions within compound production labels", async () => {
+			await env.DB.batch([
+				env.DB.prepare(
+					"UPDATE exercises SET target_muscles = ? WHERE id = ?",
+				).bind("下半身・心肺, ふくらはぎ・足首", 1),
+				env.DB.prepare(
+					"UPDATE exercises SET target_muscles = ? WHERE id = ?",
+				).bind("肩・肩甲帯、ふくらはぎ", 2),
+			]);
+			const res = await request("/sessions/1");
+			expect(res.status).toBe(200);
+			const html = await res.text();
+			expect(atlasPatterns(html)).toEqual(
+				idsForPatterns([
+					"rectus femoris",
+					"vastus",
+					"biceps femoris",
+					"semitendinosus",
+					"semimembranosus",
+					"gastrocnemius",
+					"soleus",
+					"adductor",
+					"gracilis",
+					"gluteus",
+					"deltoid",
+				]),
+			);
+			expect(html).toContain('src="/js/muscle-atlas.js"');
+			expect(html).toContain('class="atlas-count">23<small>対象</small>');
+			expect(html).toContain(
+				"モデル未対応（名称のみ表示）: 心肺、足首、肩甲帯",
+			);
+			expect(
+				html.match(/class="target-muscle-tag">腓腹筋<\/span>/g),
+			).toHaveLength(1);
 		});
 
 		it("does not display target muscles section when no exercises have target_muscles", async () => {
@@ -367,7 +453,7 @@ describe("Session views", () => {
 				.run();
 			const res = await request("/sessions/10");
 			const html = await res.text();
-			expect(html).not.toContain("data-muscles=");
+			expect(html).not.toContain("data-primary-ids=");
 			expect(html).not.toContain('src="/js/muscle-atlas.js"');
 		});
 
@@ -424,19 +510,21 @@ describe("Session views", () => {
 			const html = await res.text();
 			// Only completed exercise's target_muscles should appear
 			expect(html).toContain('id="atlas-heading"');
-			expect(atlasPatterns(html)).toEqual([
-				"rectus femoris",
-				"vastus",
-				"biceps femoris",
-				"semitendinosus",
-				"semimembranosus",
-				"gastrocnemius",
-				"soleus",
-				"adductor",
-				"gracilis",
-				"gluteus",
-			]);
-			expect(html).toContain("脚");
+			expect(atlasPatterns(html)).toEqual(
+				idsForPatterns([
+					"rectus femoris",
+					"vastus",
+					"biceps femoris",
+					"semitendinosus",
+					"semimembranosus",
+					"gastrocnemius",
+					"soleus",
+					"adductor",
+					"gracilis",
+					"gluteus",
+				]),
+			);
+			expect(html).toContain("大腿直筋");
 			// Skipped and planned exercises' target_muscles should NOT appear in the summary tags
 			expect(html).not.toContain('<span class="target-muscle-tag">肩</span>');
 			expect(html).not.toContain('<span class="target-muscle-tag">腕</span>');

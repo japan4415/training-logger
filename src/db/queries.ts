@@ -275,6 +275,7 @@ interface JoinedSessionExerciseRow {
 	ex_category: "strength" | "cardio" | "flexibility" | "other";
 	ex_equipment: string | null;
 	ex_target_muscles: string | null;
+	ex_atlas_muscles: string | null;
 	ex_notes: string | null;
 	ex_created_at: string;
 	ex_updated_at: string;
@@ -289,7 +290,7 @@ async function buildSessionDetail(
 	// Get session exercises joined with exercise info
 	let seSql = `SELECT se.*,
 	             e.id as ex_id, e.name as ex_name, e.category as ex_category,
-	             e.equipment as ex_equipment, e.target_muscles as ex_target_muscles,
+	             e.equipment as ex_equipment, e.target_muscles as ex_target_muscles, e.atlas_muscles as ex_atlas_muscles,
 	             e.notes as ex_notes, e.created_at as ex_created_at, e.updated_at as ex_updated_at
 	             FROM session_exercises se
 	             JOIN exercises e ON se.exercise_id = e.id
@@ -328,6 +329,7 @@ async function buildSessionDetail(
 			category: row.ex_category,
 			equipment: row.ex_equipment,
 			target_muscles: row.ex_target_muscles,
+			atlas_muscles: row.ex_atlas_muscles,
 			notes: row.ex_notes,
 			created_at: row.ex_created_at,
 			updated_at: row.ex_updated_at,

@@ -53,6 +53,7 @@ erDiagram
         TEXT category "NOT NULL"
         TEXT equipment
         TEXT target_muscles
+        TEXT atlas_muscles "NULL or JSON object"
         TEXT notes
         TEXT created_at
         TEXT updated_at
@@ -616,3 +617,11 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 - 表記揺れ（「カイザーチェストプレス」「カイザーCP」「Keiser CP」）により、同一種目の進捗グラフを統合できなくなる
 - 種目の属性（カテゴリ・器具・対象部位）を種目実施ごとに重複記録することになる
 - 別名テーブルによる表記揺れ吸収が利用できない
+
+## Atlas筋肉の構造化
+
+`migrations/0002_atlas_muscles.sql` で種目マスタへ nullable TEXTの `atlas_muscles` を追加する。値は `{"primary":["FJ1447","FJ1447M"],"secondary":[],"unavailable":[]}` のJSONオブジェクト。primary/secondaryは配信Atlasの筋肉ID、unavailableはモデル未収録の筋肉名。アプリ層でID実在・配列・重複・主優先を検証する。左右・筋頭・筋部を個別IDで選べる。
+
+NULLは従来の部位名による参考表示、空の3配列は明示的に対象筋なしを意味する。既存 `target_muscles` は変更しない。移行時はレビュー済み14種目と明示した別名の完全一致に限って初期割当を保存する。未知種目に推測で割当は付けない。新規登録では同じプロファイルを既定値とし、指定された割当があればそちらを優先する。更新はMCPの `set_exercise_muscles` から行う。
+
+初期対応表は `src/domain/atlas-profiles.json`。適用済みmigrationは変更せず、その後のプロファイル改訂で既存DBも更新する場合は新しいmigrationを追加する。出典と前提は [anatomy.md](./anatomy.md) を参照。
