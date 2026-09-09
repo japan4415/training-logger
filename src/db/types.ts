@@ -5,6 +5,7 @@ export interface ExerciseRow {
 	category: "strength" | "cardio" | "flexibility" | "other";
 	equipment: string | null;
 	target_muscles: string | null;
+	atlas_muscles?: string | null;
 	notes: string | null;
 	created_at: string;
 	updated_at: string;

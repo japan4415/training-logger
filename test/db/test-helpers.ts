@@ -11,6 +11,7 @@ export async function applyMigrations(db: D1Database): Promise<void> {
 			category TEXT NOT NULL DEFAULT 'strength' CHECK (category IN ('strength', 'cardio', 'flexibility', 'other')),
 			equipment TEXT,
 			target_muscles TEXT,
+			atlas_muscles TEXT,
 			notes TEXT,
 			created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
 			updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))

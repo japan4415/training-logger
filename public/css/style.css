@@ -778,3 +778,18 @@ a.exercise-card:active {
 @media (prefers-reduced-motion: reduce) {
 	.atlas-controls button:active:not(:disabled) { transform: none; }
 }
+/* Exact muscle assignments and exercise detail. */
+.main-content > .muscle-atlas { margin-bottom: 24px; }
+.atlas-legends { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.atlas-legend-secondary i { background: #75adff; box-shadow: none; }
+.atlas-muscle-group { margin-top: 18px; padding-top: 16px; border-top: 1px solid #304153; }
+.atlas-muscle-group h3 { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: #c9dae7; }
+.muscle-atlas .atlas-muscle-group .target-muscles-tags { border: 0; padding-top: 0; }
+.muscle-atlas .atlas-secondary-group .target-muscle-tag { color: #c1d8ff; background: #233956; border-color: #41658c; }
+.atlas-depth-control { display: flex; justify-content: center; margin-top: 12px; }
+.atlas-xray { min-height: 44px; padding: 8px 16px; border: 1px solid #405970; border-radius: 10px; background: #1d3042; color: #bfd3e4; font: inherit; font-size: 12px; cursor: pointer; }
+.atlas-xray[aria-pressed="true"] { background: #d9f7f0; color: #143b37; border-color: #8df5df; }
+.atlas-xray:active:not(:disabled) { transform: scale(.97); }
+.atlas-xray:disabled { opacity: .45; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .atlas-xray:active:not(:disabled) { transform: none; } }
+.atlas-count { flex-shrink: 0; white-space: nowrap; }

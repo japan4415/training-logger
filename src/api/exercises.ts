@@ -6,6 +6,7 @@ import {
 } from "../db/exercises.js";
 import { getExerciseStats } from "../db/queries.js";
 import type { ExerciseRow } from "../db/types.js";
+import { parseAtlasAssignment } from "../domain/atlas.js";
 import type { Bindings } from "../env.js";
 
 const VALID_CATEGORIES = new Set<string>([
@@ -47,6 +48,7 @@ export async function listExercises(c: Context<{ Bindings: Bindings }>) {
 				category: exercise.category,
 				equipment: exercise.equipment,
 				target_muscles: exercise.target_muscles,
+				atlas_muscles: parseAtlasAssignment(exercise.atlas_muscles),
 				last_performed: stats?.sessionSummaries[0]?.sessionDate ?? null,
 				total_sessions: stats?.totalSessions ?? 0,
 			};
@@ -83,6 +85,7 @@ export async function getExercise(c: Context<{ Bindings: Bindings }>) {
 			category: exercise.category,
 			equipment: exercise.equipment,
 			target_muscles: exercise.target_muscles,
+			atlas_muscles: parseAtlasAssignment(exercise.atlas_muscles),
 			aliases: aliasRows.map((a) => a.alias),
 		},
 	});

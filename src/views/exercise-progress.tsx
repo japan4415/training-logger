@@ -9,6 +9,7 @@ import {
 	type ChartData,
 	type ChartDataset,
 } from "./components/chart.js";
+import { getExerciseAnatomy, MuscleMap } from "./components/muscle-map.js";
 import { Layout } from "./layout.js";
 
 // ---------------------------------------------------------------------------
@@ -465,7 +466,7 @@ const ExerciseInfo: FC<{
 			)}
 			{exercise.target_muscles && (
 				<>
-					<dt>対象</dt>
+					<dt>部位メモ</dt>
 					<dd>{exercise.target_muscles}</dd>
 				</>
 			)}
@@ -547,6 +548,11 @@ export function registerExerciseProgressRoutes(
 		return c.html(
 			<Layout title={exercise.name} activeNav="exercises">
 				<ExerciseInfo exercise={exercise} aliases={aliases} />
+				<MuscleMap
+					anatomy={getExerciseAnatomy(exercise)}
+					context="exercise"
+					category={exercise.category}
+				/>
 				<div id="chart-section">
 					<ChartSectionContent
 						exerciseId={id}

@@ -33,6 +33,7 @@ graph LR
 | [docs/architecture.md](docs/architecture.md) | 技術スタック・システム構成・認証・リクエストフロー・リポジトリ構成 |
 | [docs/database.md](docs/database.md) | テーブル設計・ER 図・マイグレーション方針 |
 | [docs/mcp-server.md](docs/mcp-server.md) | MCP ツール仕様・エンドポイント・各クライアントの接続手順 |
+| [docs/anatomy.md](docs/anatomy.md) | Atlasの筋肉カタログ・種目ごとの対応・出典 |
 | [docs/web-ui.md](docs/web-ui.md) | Web UI 画面設計・SSR 構成・htmx による部分更新 |
 | [docs/deployment.md](docs/deployment.md) | デプロイ手順・Cloudflare 設定・環境変数・CI/CD |
 | [docs/development.md](docs/development.md) | ローカル開発・テスト・lint・issue 駆動開発フロー |

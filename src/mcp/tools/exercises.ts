@@ -1,6 +1,15 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { registerExercise, searchExercises } from "../../db/exercises.js";
+import {
+	registerExercise,
+	searchExercises,
+	setExerciseAtlasMuscles,
+} from "../../db/exercises.js";
+import {
+	ATLAS_MUSCLES,
+	type AtlasAssignment,
+	parseAtlasAssignment,
+} from "../../domain/atlas.js";
 import type { Bindings } from "../../env.js";
 
 // ---- Response types ----
@@ -12,6 +21,7 @@ export interface SearchExercisesResult {
 		category: string;
 		equipment: string | null;
 		target_muscles: string | null;
+		atlas_muscles: AtlasAssignment | null;
 		aliases: string[];
 	}>;
 }
@@ -23,6 +33,7 @@ export interface RegisterExerciseResult {
 		category: string;
 		equipment: string | null;
 		target_muscles: string | null;
+		atlas_muscles: AtlasAssignment | null;
 		aliases: string[];
 	};
 }
@@ -39,6 +50,7 @@ export interface RegisterExerciseParams {
 	category?: "strength" | "cardio" | "flexibility" | "other";
 	equipment?: string;
 	target_muscles?: string;
+	atlas_muscles?: AtlasAssignment | null;
 	aliases?: string[];
 }
 
@@ -57,6 +69,7 @@ export async function searchExercisesHandler(
 			category: r.exercise.category,
 			equipment: r.exercise.equipment,
 			target_muscles: r.exercise.target_muscles,
+			atlas_muscles: parseAtlasAssignment(r.exercise.atlas_muscles),
 			aliases: r.aliases.map((a) => a.alias),
 		})),
 	};
@@ -71,6 +84,7 @@ export async function registerExerciseHandler(
 		category: params.category,
 		equipment: params.equipment ?? null,
 		target_muscles: params.target_muscles ?? null,
+		atlas_muscles: params.atlas_muscles,
 		aliases: params.aliases,
 	});
 
@@ -81,12 +95,60 @@ export async function registerExerciseHandler(
 			category: result.exercise.category,
 			equipment: result.exercise.equipment,
 			target_muscles: result.exercise.target_muscles,
+			atlas_muscles: parseAtlasAssignment(result.exercise.atlas_muscles),
 			aliases: result.aliases.map((a) => a.alias),
 		},
 	};
 }
 
+export function listAtlasMusclesHandler(params: { query?: string } = {}) {
+	const query = params.query?.trim().toLocaleLowerCase();
+	return {
+		muscles: ATLAS_MUSCLES.filter(
+			(muscle) =>
+				!query ||
+				[muscle.id, muscle.name, muscle.label, muscle.groupLabel].some(
+					(value) => value.toLocaleLowerCase().includes(query),
+				),
+		),
+	};
+}
+
+export async function setExerciseMusclesHandler(
+	env: Bindings,
+	params: { exercise_id: number; atlas_muscles: AtlasAssignment | null },
+) {
+	const exercise = await setExerciseAtlasMuscles(
+		env.DB,
+		params.exercise_id,
+		params.atlas_muscles,
+	);
+	return {
+		exercise: {
+			...exercise,
+			atlas_muscles: parseAtlasAssignment(exercise.atlas_muscles),
+		},
+	};
+}
+
 // ---- MCP tool registration ----
+
+const atlasAssignmentSchema = z
+	.object({
+		primary: z
+			.array(z.string().min(1).max(160))
+			.max(200)
+			.describe("主働筋の正確なAtlas ID配列。list_atlas_musclesで確認"),
+		secondary: z
+			.array(z.string().min(1).max(160))
+			.max(200)
+			.describe("補助筋のAtlas ID配列"),
+		unavailable: z
+			.array(z.string().trim().min(1).max(100))
+			.max(50)
+			.describe("Atlasにモデルのない筋肉・部位名"),
+	})
+	.strict();
 
 const categoryEnum = z.enum(["strength", "cardio", "flexibility", "other"]);
 
@@ -119,6 +181,62 @@ async function findConflictingExercises(
 }
 
 export function registerExerciseTools(server: McpServer, env: Bindings): void {
+	server.registerTool(
+		"list_atlas_muscles",
+		{
+			description:
+				"割当可能なHuman Atlasの筋肉ID・英語名・日本語名・部位を検索します。筋肉の登録・更新前にIDを確認してください。",
+			annotations: { readOnlyHint: true },
+			inputSchema: {
+				query: z
+					.string()
+					.max(200)
+					.optional()
+					.describe("筋肉ID・英語名・日本語名・部位の部分一致"),
+			},
+		},
+		async (args) => ({
+			content: [
+				{
+					type: "text" as const,
+					text: JSON.stringify(listAtlasMusclesHandler(args)),
+				},
+			],
+		}),
+	);
+
+	server.registerTool(
+		"set_exercise_muscles",
+		{
+			description:
+				"登録済み種目の主働筋・補助筋をAtlasの正確なIDで設定します。既存割当を置換します。nullで従来の部位名による表示へ戻します。",
+			inputSchema: {
+				exercise_id: z.number().int().positive().describe("種目ID"),
+				atlas_muscles: atlasAssignmentSchema.nullable(),
+			},
+		},
+		async (args) => {
+			try {
+				const result = await setExerciseMusclesHandler(env, args);
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
 	server.registerTool(
 		"search_exercises",
 		{
@@ -153,6 +271,12 @@ export function registerExerciseTools(server: McpServer, env: Bindings): void {
 				category: categoryEnum.default("strength").describe("カテゴリ"),
 				equipment: z.string().optional().describe("使用器具"),
 				target_muscles: z.string().optional().describe("対象部位"),
+				atlas_muscles: atlasAssignmentSchema
+					.nullable()
+					.optional()
+					.describe(
+						"Atlas筋肉の割当。省略時は既知の種目名から設定、nullは従来の部位名で表示",
+					),
 				aliases: z.array(z.string()).optional().describe("別名の配列"),
 			},
 		},
@@ -163,6 +287,7 @@ export function registerExerciseTools(server: McpServer, env: Bindings): void {
 					category: args.category,
 					equipment: args.equipment,
 					target_muscles: args.target_muscles,
+					atlas_muscles: args.atlas_muscles,
 					aliases: args.aliases,
 				});
 				return {

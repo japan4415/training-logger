@@ -209,6 +209,53 @@ describe("exercise views", () => {
 	// -----------------------------------------------------------------------
 
 	describe("GET /exercises/:id", () => {
+		it("renders one anatomy card on the full page and none in period fragments", async () => {
+			const full = await app.request(
+				`/exercises/${benchId}`,
+				{},
+				{ DB: env.DB },
+			);
+			const html = await full.text();
+			expect(
+				html.match(/class="muscle-atlas target-muscles-summary"/g),
+			).toHaveLength(1);
+			expect(html).toContain("この種目で使う筋肉");
+			expect(html).toContain("FJ1446");
+			expect(html).toContain("補助・安定化");
+			const partial = await app.request(
+				`/exercises/${benchId}?period=1m`,
+				{ headers: { "HX-Request": "true" } },
+				{ DB: env.DB },
+			);
+			const fragment = await partial.text();
+			expect(fragment).not.toContain("data-primary-ids");
+			expect(fragment).not.toContain("muscle-atlas.js");
+		});
+
+		it("shows an unconfigured exercise state and describes flexibility without strength load", async () => {
+			const res = await app.request(
+				`/exercises/${stretchId}`,
+				{},
+				{ DB: env.DB },
+			);
+			const html = await res.text();
+			expect(html).toContain("ストレッチ・可動域の対象筋");
+			expect(html).toContain(
+				"筋力負荷ではなく、可動域・ストレッチの対象を表示",
+			);
+			const { exercise } = await registerExercise(env.DB, {
+				name: "未設定ストレッチ",
+				category: "flexibility",
+			});
+			const unknown = await app.request(
+				`/exercises/${exercise.id}`,
+				{},
+				{ DB: env.DB },
+			);
+			const unknownHtml = await unknown.text();
+			expect(unknownHtml).toContain("対象筋肉がまだ設定されていません");
+			expect(unknownHtml).not.toContain('src="/js/muscle-atlas.js"');
+		});
 		it("should return 404 for non-existent exercise", async () => {
 			const res = await app.request("/exercises/9999", {}, { DB: env.DB });
 			expect(res.status).toBe(404);

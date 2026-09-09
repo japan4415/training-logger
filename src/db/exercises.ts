@@ -1,3 +1,8 @@
+import {
+	type AtlasAssignment,
+	getDefaultAtlasAssignment,
+	validateAtlasAssignment,
+} from "../domain/atlas.js";
 import type { ExerciseAliasRow, ExerciseRow } from "./types.js";
 
 /** Exercise with its aliases */
@@ -132,6 +137,7 @@ export async function registerExercise(
 		category?: ExerciseRow["category"];
 		equipment?: string | null;
 		target_muscles?: string | null;
+		atlas_muscles?: AtlasAssignment | null;
 		notes?: string | null;
 		aliases?: string[];
 	},
@@ -145,12 +151,21 @@ export async function registerExercise(
 		aliases = [],
 	} = params;
 
+	const assignment =
+		params.atlas_muscles === undefined
+			? getDefaultAtlasAssignment(name)
+			: params.atlas_muscles;
+	const atlasMuscles =
+		assignment === null
+			? null
+			: JSON.stringify(validateAtlasAssignment(assignment));
+
 	const result = await db
 		.prepare(
-			`INSERT INTO exercises (name, category, equipment, target_muscles, notes)
-			 VALUES (?, ?, ?, ?, ?)`,
+			`INSERT INTO exercises (name, category, equipment, target_muscles, notes, atlas_muscles)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
 		)
-		.bind(name, category, equipment, target_muscles, notes)
+		.bind(name, category, equipment, target_muscles, notes, atlasMuscles)
 		.run();
 
 	const exerciseId = result.meta.last_row_id;
@@ -215,4 +230,24 @@ async function attachAliases(
 		result.push({ exercise, aliases });
 	}
 	return result;
+}
+
+/** Replace the exact Atlas muscle assignment; null restores legacy name mapping. */
+export async function setExerciseAtlasMuscles(
+	db: D1Database,
+	id: number,
+	assignment: AtlasAssignment | null,
+): Promise<ExerciseRow> {
+	const value =
+		assignment === null
+			? null
+			: JSON.stringify(validateAtlasAssignment(assignment));
+	const exercise = await db
+		.prepare(
+			"UPDATE exercises SET atlas_muscles = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? RETURNING *",
+		)
+		.bind(value, id)
+		.first<ExerciseRow>();
+	if (!exercise) throw new Error("Exercise not found");
+	return exercise;
 }

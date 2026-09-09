@@ -9,6 +9,7 @@
 		const stage = section.querySelector(".atlas-stage");
 		const status = section.querySelector(".atlas-status");
 		const buttons = [...section.querySelectorAll("[data-atlas-view]")];
+		const xrayButton = section.querySelector("[data-atlas-xray]");
 		if (!stage || !status) return;
 		const controller = new AbortController();
 		const { signal } = controller;
@@ -38,9 +39,10 @@
 		const fail = () => {
 			failed = true;
 			for (const button of buttons) button.disabled = true;
+			if (xrayButton) xrayButton.disabled = true;
 			section.dataset.atlasState = "error";
 			status.hidden = false;
-			status.textContent = "3D表示を読み込めませんでした。鍛えた部位は下の一覧で確認できます。";
+			status.textContent = "3D表示を読み込めませんでした。対象筋は下の一覧で確認できます。";
 		};
 		timeout = setTimeout(() => {
 			if (disposed) return;
@@ -66,12 +68,14 @@
 				return buffer;
 			}));
 			if (disposed) return;
-			const patterns = JSON.parse(section.dataset.muscles || "[]").map((name) => name.toLowerCase());
+			const primaryIds = new Set(JSON.parse(section.dataset.primaryIds || "[]"));
+			const secondaryIds = new Set(JSON.parse(section.dataset.secondaryIds || "[]"));
 			scene = new THREE.Scene();
 			const body = new THREE.Group();
 			scene.add(body);
 			const neutral = new THREE.MeshStandardMaterial({ color: 0x738399, roughness: 0.72, metalness: 0.08 });
 			const active = new THREE.MeshStandardMaterial({ color: 0x38dfcb, emissive: 0x0d8c79, emissiveIntensity: 0.4, roughness: 0.4, metalness: 0.12 });
+			const assisting = new THREE.MeshStandardMaterial({ color: 0x6aa9ff, emissive: 0x204d99, emissiveIntensity: 0.25, roughness: 0.5, metalness: 0.08 });
 			const skin = new THREE.MeshStandardMaterial({ color: 0xa8bfce, transparent: true, opacity: 0.08, depthWrite: false, roughness: 1 });
 			let selectedCount = 0;
 			for (const item of model.parts) {
@@ -81,9 +85,11 @@
 				geometry.setAttribute("normal", new THREE.BufferAttribute(new Int16Array(buffer, item.normals, item.vertexCount * 3), 3, true));
 				geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(buffer, item.indices, item.indexCount), 1));
 				const isSkin = item.system === "integumentary";
-				const selected = !isSkin && patterns.some((pattern) => item.name.toLowerCase().includes(pattern));
-				if (selected) selectedCount++;
-				const mesh = new THREE.Mesh(geometry, isSkin ? skin : selected ? active : neutral);
+				const isPrimary = !isSkin && primaryIds.has(item.id);
+				const isSecondary = !isSkin && !isPrimary && secondaryIds.has(item.id);
+				if (isPrimary || isSecondary) selectedCount++;
+				const mesh = new THREE.Mesh(geometry, isSkin ? skin : isPrimary ? active : isSecondary ? assisting : neutral);
+				mesh.renderOrder = isPrimary ? 2 : isSecondary ? 1 : 0;
 				body.add(mesh);
 			}
 			if (!body.children.length) throw new Error("Atlas model is empty");
@@ -110,7 +116,7 @@
 			renderer.outputColorSpace = THREE.SRGBColorSpace;
 			const canvas = renderer.domElement;
 			canvas.setAttribute("role", "img");
-			canvas.setAttribute("aria-label", "鍛えた筋肉を青緑で示す人体図。左右矢印キーまたは横ドラッグで回転できます。");
+			canvas.setAttribute("aria-label", section.dataset.atlasLabel || "対象筋を示す人体図。左右矢印キーで回転できます。");
 			canvas.tabIndex = 0;
 			canvas.style.touchAction = "pan-y";
 			canvas.style.display = "block";
@@ -125,6 +131,18 @@
 				if (disposed || failed) return;
 				try { renderer.render(scene, camera); } catch { fail(); }
 			};
+			if (xrayButton) {
+				xrayButton.disabled = false;
+				xrayButton.addEventListener("click", () => {
+					const enabled = xrayButton.getAttribute("aria-pressed") !== "true";
+					xrayButton.setAttribute("aria-pressed", String(enabled));
+					active.depthTest = !enabled;
+					assisting.depthTest = !enabled;
+					active.depthWrite = !enabled;
+					assisting.depthWrite = !enabled;
+					render();
+				}, { signal });
+			}
 			const syncButtons = () => {
 				const angle = ((pivot.rotation.y % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 				for (const button of buttons) {
