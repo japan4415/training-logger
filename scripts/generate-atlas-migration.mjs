@@ -8,4 +8,5 @@ ALTER TABLE exercises ADD COLUMN atlas_muscles TEXT
   CHECK (atlas_muscles IS NULL OR (json_valid(atlas_muscles) AND json_type(atlas_muscles) = 'object'));
 `;
 const sql = profiles.map((profile) => `\n-- ${profile.names[0]}\nUPDATE exercises SET atlas_muscles = ${quote(JSON.stringify(profile.assignment))}\nWHERE atlas_muscles IS NULL AND name COLLATE NOCASE IN (${profile.names.map(quote).join(', ')});\n`).join('');
-writeFileSync(new URL('../migrations/0002_atlas_muscles.sql', import.meta.url), header + sql);
+// An applied migration is immutable. New profile changes need a new migration.
+writeFileSync(new URL('../migrations/0002_atlas_muscles.sql', import.meta.url), header + sql, { flag: 'wx' });

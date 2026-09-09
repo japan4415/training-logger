@@ -1,16 +1,30 @@
 # Atlasと種目の筋肉対応
 
-Human Atlas / BodyParts3DのメッシュID（FJ形式）を、保存・選択・描画の基準とする。左右、筋頭、筋部を分離したIDをそのまま使用し、描画時に筋肉名の部分一致で選択しない。表示名は読みやすい筋肉群にまとめるが、保存された選択範囲を広げない。
+Human Atlas / BodyParts3DのメッシュID（Human AtlasのFJ形式と補完したBodyParts3D 3.0のFMA形式）を、保存・選択・描画の基準とする。左右、筋頭、筋部を分離したIDをそのまま使用し、描画時に筋肉名の部分一致で選択しない。表示名は読みやすい筋肉群にまとめるが、保存された選択範囲を広げない。
 
 Atlasは形状と識別子の資料であり、各運動での筋活動そのものの資料ではない。種目の一般的な動作と以下の出典をもとに、主な対象・補助/安定化へ分類した初期値を用意する。個々の筋頭への分解や補助筋の選択には関節動作に基づく推論を含む。筋活動や負荷量の実測ではない。
 
-- カタログ: `src/domain/atlas.ts` と `public/models/human-atlas/atlas.json`。150筋肉メッシュを収録。元資料の誤ったsystem分類3対のみmuscularへ補正し、元ID・名称・形状は保持。
+- カタログ: `src/domain/atlas.ts` と `public/models/human-atlas/atlas.json`。154筋肉メッシュを収録。Human Atlasの150筋にBodyParts3D 3.0の広背筋・腹直筋を左右それぞれ追加する。元資料の誤ったsystem分類3対のみmuscularへ補正。各メッシュの元ID・名称を保持し、異なる版の補完モデルは共通の筋肉を基準に位置を合わせる。
 - 初期プロファイル: `src/domain/atlas-profiles.json`。14種目の具体的なID、明示的な別名、前提、出典を管理。
 - 初期移行: `migrations/0002_atlas_muscles.sql`。旧部位メモは保持し、名前が完全一致する既存種目だけに構造化した割当を保存。
 - 新しい種目: 既知名には同じ既定値を使用。未知名は推測せず従来の部位メモによる参考表示とする。MCPでカタログを確認し、割当を保存できる。
 - `primary` / `secondary` が両方に含むIDはprimary優先。`unavailable`には収録されない筋肉名を保存する。空オブジェクト配列は明示的に対象なし、NULLは従来表示への復帰。
-- 広背筋・腹直筋は元Atlasにも存在しない。ラットプルダウンの主対象を大円筋に、腹直筋を外腹斜筋に置き換えない。
+- 広背筋・腹直筋は採用したHuman Atlas / BodyParts3D 4.0の配布データには含まれないが、[公式BodyParts3D 3.0](https://dbarchive.biosciencedbc.jp/data/bodyparts3d/20110915/)には含まれる。この4メッシュを補完し、別筋肉で代用しない。
+- 追加移行: `migrations/0003_atlas_trunk_muscles.sql`。ラットプルダウン・シーテッドロウ・レッグレイズと明示した別名のうち、0002の既定割当と同じ内容だけを更新する。JSONの空白・キー順・配列順には依存しない。個別設定・空設定・NULL・旧部位メモは保持する。
 - 透過表示は、深部・反対側を含む選択筋を位置を保ったまま前面表示する。実際の表層との前後関係を確認する場合はオフにする。
+
+## 補完したモデルの出典と再現
+
+[公式BodyParts3D 3.0名称表](https://dbarchive.biosciencedbc.jp/data/bodyparts3d/20110915/parts_list_e.txt)のIDをそのまま使用する。
+
+| 筋肉 | 右 | 左 |
+|---|---|---|
+| 広背筋 | FMA13358 | FMA13359 |
+| 腹直筋 | FMA13377 | FMA13378 |
+
+公式3.0 OBJの形状・トポロジーを保持し、現行モデルと同じ単位・座標軸への変換後、共通の外腹斜筋を基準に平行移動で位置を合わせる。フィットした外腹斜筋の最近傍頂点RMS差は約2.5mm、独立した大胸筋・大円筋では約3.5〜5.5mm。版間の形状差は残る。単一版の完全一致モデルとは扱わない。
+
+再生成は `node scripts/import-human-atlas.mjs /path/to/human-atlas /path/to/extracted/v3/obj`。配布ZIP・OBJのSHA-256、平行移動、出典は `scripts/import-bodyparts3d-v3.mjs` とmanifestに固定する。公式3.0の99%ポリゴン削減版ZIPからOBJを取り出して使用し、4メッシュのハッシュが異なる場合は取り込みを拒否する。位置合わせの再現は `uv run scripts/verify-bodyparts3d-registration.py /path/to/extracted/v3/obj` で行う。現行の[公式ライセンス](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html)に従いCC BY 4.0で帰属を表示する。
 
 ## 初期対応表
 
@@ -25,13 +39,13 @@ Atlasは形状と識別子の資料であり、各運動での筋活動そのも
 | バランスボールスクワット | 大腿直筋、中間広筋、外側広筋、内側広筋、大殿筋 | 大腿二頭筋、半膜様筋、半腱様筋、腓腹筋、ヒラメ筋 | — | 壁と背中でボールを挟むスクワットを想定。 [出典](https://www.acefitness.org/resources/everyone/exercise-library/experience/beginner/?page=7) |
 | カーフレイズ | 腓腹筋、ヒラメ筋 | — | — | 立位型を想定。座位型では対象の比重が異なる。 [出典](https://www.healthnz.govt.nz/health-topics/conditions-treatments/bones-and-joints/calf-stretch-exercises) |
 | カイザーチェストプレス | 大胸筋 | 上腕三頭筋、三角筋（前部） | — | 水平プレスを想定。メーカーではなく動作に対応。 [出典](https://www.nasm.org/resource-center/exercise-library/chest-press-machine) |
-| ラットプルダウン | — | 大円筋、上腕二頭筋、上腕筋、腕橈骨筋、僧帽筋（下部）、大菱形筋、小菱形筋 | 広背筋 | 主対象の広背筋はAtlas未収録。大円筋への置換はしない。 [出典](https://www.acefitness.org/resources/everyone/exercise-library/158/seated-lat-pulldown/) |
+| ラットプルダウン | 広背筋 | 大円筋、上腕二頭筋、上腕筋、腕橈骨筋、僧帽筋（下部）、大菱形筋、小菱形筋 | — | 広背筋を主対象、大円筋などを補助として区別。 [出典](https://www.acefitness.org/resources/everyone/exercise-library/158/seated-lat-pulldown/) |
 | グッドモーニング | 大腿二頭筋、半膜様筋、半腱様筋、大殿筋 | 腰腸肋筋、胸腸肋筋、胸最長筋、胸棘筋、大内転筋 | — | 股関節伸展。股関節を跨がない大腿二頭筋短頭は含めない。 [出典](https://www.nasm.org/resource-center/exercise-library/good-mornings) |
 | アダクター | 大内転筋、長内転筋、短内転筋、小内転筋 | 薄筋、恥骨筋 | — | 内転動作。姿勢で各筋の寄与が変わる。 [出典](https://www.acefitness.org/continuing-education/prosource/may-2016/5893/functional-anatomy-series-the-adductors/) |
 | アブダクター | 中殿筋、小殿筋 | 大腿筋膜張筋 | — | 外転動作。大殿筋上部線維を分離できないため全大殿筋を指定しない。 [出典](https://sportsmedref.amssm.org/physical-examination/hip-buttocks-pelvis/) |
-| シーテッドロウ | 大菱形筋、小菱形筋、僧帽筋（中部） | 上腕二頭筋、上腕筋、腕橈骨筋、三角筋（後部）、大円筋、僧帽筋（下部） | 広背筋 | 胸の前へ引くロウを想定。主対象の広背筋はAtlas未収録。 [出典](https://www.nasm.org/resource-center/exercise-library/seated-machine-row-close-grip) |
+| シーテッドロウ | 大菱形筋、小菱形筋、僧帽筋（中部）、広背筋 | 上腕二頭筋、上腕筋、腕橈骨筋、三角筋（後部）、大円筋、僧帽筋（下部） | — | 胸の前へ引くロウを想定。広背筋と肩甲骨を引き寄せる筋を主対象とする。 [出典](https://www.nasm.org/resource-center/exercise-library/seated-machine-row-close-grip) |
 | バタフライ | 大胸筋 | 三角筋（前部） | — | 胸のペックデックを想定。リアデルト用の逆向き動作ではない。 [出典](https://www.acefitness.org/certifiednews/images/article/pdfs/ACE_BestChestExercises.pdf) |
-| レッグレイズ | 腸骨筋、大腰筋 | 外腹斜筋、大腿直筋 | 腹直筋 | 股関節屈曲と体幹安定化を区別。腹直筋を外腹斜筋で代用しない。 [出典](https://pmc.ncbi.nlm.nih.gov/articles/PMC4792997/) |
+| レッグレイズ | 腸骨筋、大腰筋 | 外腹斜筋、大腿直筋、腹直筋 | — | 股関節屈曲と体幹安定化を区別。腹直筋は骨盤・体幹の安定化として補助に含める。骨盤を巻き上げる動作では役割が変わる。 [出典](https://pmc.ncbi.nlm.nih.gov/articles/PMC4792997/) |
 
 ## 更新時の検証
 

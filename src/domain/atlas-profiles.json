@@ -234,7 +234,7 @@
 	{
 		"names": ["ラットプルダウン", "Lat Pulldown"],
 		"assignment": {
-			"primary": [],
+			"primary": ["FMA13358", "FMA13359"],
 			"secondary": [
 				"FJ1507",
 				"FJ1507M",
@@ -253,9 +253,9 @@
 				"FJ1537",
 				"FJ1537M"
 			],
-			"unavailable": ["広背筋"]
+			"unavailable": []
 		},
-		"note": "主対象の広背筋はAtlas未収録。大円筋への置換はしない。",
+		"note": "広背筋を主対象、大円筋などを補助として区別。",
 		"sources": [
 			"https://www.acefitness.org/resources/everyone/exercise-library/158/seated-lat-pulldown/"
 		]
@@ -334,7 +334,9 @@
 				"FJ1537",
 				"FJ1537M",
 				"FJ1554",
-				"FJ1554M"
+				"FJ1554M",
+				"FMA13358",
+				"FMA13359"
 			],
 			"secondary": [
 				"FJ1478",
@@ -352,9 +354,9 @@
 				"FJ1520",
 				"FJ1520M"
 			],
-			"unavailable": ["広背筋"]
+			"unavailable": []
 		},
-		"note": "胸の前へ引くロウを想定。主対象の広背筋はAtlas未収録。",
+		"note": "胸の前へ引くロウを想定。広背筋と肩甲骨を引き寄せる筋を主対象とする。",
 		"sources": [
 			"https://www.nasm.org/resource-center/exercise-library/seated-machine-row-close-grip"
 		]
@@ -382,10 +384,17 @@
 		"names": ["レッグレイズ", "Leg Raise"],
 		"assignment": {
 			"primary": ["FJ1422", "FJ1422M", "FJ1431", "FJ1431M"],
-			"secondary": ["FJ1452", "FJ1452M", "FJ1433", "FJ1433M"],
-			"unavailable": ["腹直筋"]
+			"secondary": [
+				"FJ1452",
+				"FJ1452M",
+				"FJ1433",
+				"FJ1433M",
+				"FMA13377",
+				"FMA13378"
+			],
+			"unavailable": []
 		},
-		"note": "股関節屈曲と体幹安定化を区別。腹直筋を外腹斜筋で代用しない。",
+		"note": "股関節屈曲と体幹安定化を区別。腹直筋は骨盤・体幹の安定化として補助に含める。骨盤を巻き上げる動作では役割が変わる。",
 		"sources": ["https://pmc.ncbi.nlm.nih.gov/articles/PMC4792997/"]
 	}
 ]

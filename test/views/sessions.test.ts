@@ -384,9 +384,14 @@ describe("Session views", () => {
 			const res = await request("/sessions/2");
 			const html = await res.text();
 			expect(html).toContain('id="atlas-heading"');
-			expect(atlasPatterns(html)).toEqual(idsForPatterns(["external oblique"]));
+			expect(atlasPatterns(html)).toEqual(
+				idsForPatterns(["external oblique", "rectus abdominis"]),
+			);
 			expect(
 				html.match(/class="target-muscle-tag">外腹斜筋<\/span>/g),
+			).toHaveLength(1);
+			expect(
+				html.match(/class="target-muscle-tag">腹直筋<\/span>/g),
 			).toHaveLength(1);
 		});
 

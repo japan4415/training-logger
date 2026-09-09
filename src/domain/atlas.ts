@@ -85,16 +85,27 @@ const groupLabels: Record<string, string> = {
 	FJ1544: "胸棘筋",
 	FJ1536: "大菱形筋",
 	FJ1537: "小菱形筋",
+	FMA13358: "広背筋",
+	FMA13359: "広背筋",
+	FMA13377: "腹直筋",
+	FMA13378: "腹直筋",
 };
 
 export const ATLAS_MUSCLES = model.parts
 	.filter((part) => part.system === "muscular")
 	.map((part) => {
 		const groupLabel = groupLabels[part.id.replace(/M$/, "")] ?? part.name;
+		// Both original FJ meshes and the supplemental FMA meshes retain source names.
+		// The FMA IDs do not encode laterality with an M suffix.
+		const side = /\bleft\b/i.test(part.name)
+			? "左"
+			: /\bright\b/i.test(part.name)
+				? "右"
+				: "";
 		return {
 			id: part.id,
 			name: part.name,
-			label: `${part.id.endsWith("M") ? "左" : "右"} ${groupLabel}`,
+			label: side ? `${side} ${groupLabel}` : groupLabel,
 			groupLabel,
 		};
 	});
