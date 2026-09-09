@@ -5,6 +5,7 @@ import atlas from "../../public/models/human-atlas/atlas.json";
 import {
 	MuscleMap,
 	resolveAtlasMuscles,
+	splitAtlasMuscles,
 } from "../../src/views/components/muscle-map.js";
 
 function render(muscles: string[]) {
@@ -31,7 +32,6 @@ describe("Human Atlas muscle map", () => {
 			"広背筋",
 			"腹直筋",
 			"胸の周辺",
-			"",
 			"__proto__",
 			"constructor",
 		];
@@ -69,7 +69,53 @@ describe("Human Atlas muscle map", () => {
 
 	it("renders no map for a session without trained regions", () => {
 		expect(render([])).toBe("");
+		expect(render(["", " ・ ,、/；;\n "])).toBe("");
+		expect(resolveAtlasMuscles(["", "  "])).toEqual({
+			patterns: [],
+			unmapped: [],
+		});
 	});
+
+	it("splits common separators, trims names and removes duplicate labels", () => {
+		expect(
+			splitAtlasMuscles([
+				" 胸・肩･腕,前腕，背中、腹筋/脚／下腿;臀部；内転筋\n胸",
+				" 肩 ",
+				"",
+			]),
+		).toEqual([
+			"胸",
+			"肩",
+			"腕",
+			"前腕",
+			"背中",
+			"腹筋",
+			"脚",
+			"下腿",
+			"臀部",
+			"内転筋",
+		]);
+	});
+
+	it.each([
+		["下半身・心肺", "rectus femoris", "心肺", "下半身"],
+		["ふくらはぎ・足首", "gastrocnemius", "足首", "ふくらはぎ"],
+		["肩・肩甲帯", "deltoid", "肩甲帯", "肩"],
+	])(
+		"renders the supported part of compound label %s",
+		(label, pattern, unknown, known) => {
+			const resolved = resolveAtlasMuscles([label, known]);
+			expect(resolved.patterns).toContain(pattern);
+			expect(resolved.unmapped).toEqual([unknown]);
+			const html = render([label, known]);
+			expect(html).toContain('class="atlas-stage"');
+			expect(html).toContain('src="/js/muscle-atlas.js"');
+			expect(html).toContain('class="atlas-count">2<small>部位</small>');
+			expect(html).toContain(`class="target-muscle-tag">${known}</span>`);
+			expect(html).toContain(`モデル未対応（名称のみ表示）: ${unknown}`);
+			expect(html).not.toContain(label);
+		},
+	);
 
 	it("keeps names readable without JavaScript and supplies only resolved patterns", () => {
 		const html = render(["胸", "広背筋"]);

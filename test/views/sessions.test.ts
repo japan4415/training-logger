@@ -350,6 +350,41 @@ describe("Session views", () => {
 			expect(html).not.toContain('src="/js/muscle-atlas.js"');
 		});
 
+		it("loads the atlas for supported regions within compound production labels", async () => {
+			await env.DB.batch([
+				env.DB.prepare(
+					"UPDATE exercises SET target_muscles = ? WHERE id = ?",
+				).bind("下半身・心肺, ふくらはぎ・足首", 1),
+				env.DB.prepare(
+					"UPDATE exercises SET target_muscles = ? WHERE id = ?",
+				).bind("肩・肩甲帯、ふくらはぎ", 2),
+			]);
+			const res = await request("/sessions/1");
+			expect(res.status).toBe(200);
+			const html = await res.text();
+			expect(atlasPatterns(html)).toEqual([
+				"rectus femoris",
+				"vastus",
+				"biceps femoris",
+				"semitendinosus",
+				"semimembranosus",
+				"gastrocnemius",
+				"soleus",
+				"adductor",
+				"gracilis",
+				"gluteus",
+				"deltoid",
+			]);
+			expect(html).toContain('src="/js/muscle-atlas.js"');
+			expect(html).toContain('class="atlas-count">6<small>部位</small>');
+			expect(html).toContain(
+				"モデル未対応（名称のみ表示）: 心肺、足首、肩甲帯",
+			);
+			expect(
+				html.match(/class="target-muscle-tag">ふくらはぎ<\/span>/g),
+			).toHaveLength(1);
+		});
+
 		it("does not display target muscles section when no exercises have target_muscles", async () => {
 			// Create a session with only exercises that have null target_muscles
 			const db = env.DB;

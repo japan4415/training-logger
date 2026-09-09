@@ -62,11 +62,25 @@ register(
 	[...groups.quads, ...groups.hamstrings, ...groups.adductors],
 );
 
-/** Exact aliases only: unknown free text must never highlight an unrelated muscle. */
+/** Split recorded lists, preserving English names containing spaces. */
+export function splitAtlasMuscles(muscles: string[]): string[] {
+	return [
+		...new Set(
+			muscles.flatMap((muscle) =>
+				muscle
+					.split(/[・･,，、/／;；\r\n]+/u)
+					.map((part) => part.trim())
+					.filter(Boolean),
+			),
+		),
+	];
+}
+
+/** Match each complete list item; never guess from substrings in free text. */
 export function resolveAtlasMuscles(muscles: string[]) {
 	const patterns = new Set<string>();
 	const unmapped: string[] = [];
-	for (const muscle of muscles) {
+	for (const muscle of splitAtlasMuscles(muscles)) {
 		const matches = aliases[muscle.normalize("NFKC").trim().toLowerCase()];
 		if (matches) for (const pattern of matches) patterns.add(pattern);
 		else unmapped.push(muscle);
@@ -75,6 +89,7 @@ export function resolveAtlasMuscles(muscles: string[]) {
 }
 
 export const MuscleMap: FC<{ muscles: string[] }> = ({ muscles }) => {
+	muscles = splitAtlasMuscles(muscles);
 	if (muscles.length === 0) return null;
 	const { patterns, unmapped } = resolveAtlasMuscles(muscles);
 	return (
