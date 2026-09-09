@@ -15,8 +15,14 @@ const groups = {
 	biceps: ["biceps brachii", "brachialis"],
 	triceps: ["triceps brachii"],
 	forearms: ["brachioradialis", "flexor carpi", "extensor carpi", "pronator"],
-	back: ["trapezius", "rhomboid", "infraspinatus", "teres major"],
-	abs: ["external oblique"],
+	back: [
+		"latissimus dorsi",
+		"trapezius",
+		"rhomboid",
+		"infraspinatus",
+		"teres major",
+	],
+	abs: ["rectus abdominis", "external oblique"],
 	glutes: ["gluteus"],
 	quads: ["rectus femoris", "vastus"],
 	hamstrings: ["biceps femoris", "semitendinosus", "semimembranosus"],
@@ -35,12 +41,12 @@ register(["上腕三頭筋", "三頭筋", "triceps"], groups.triceps);
 register(["前腕", "前腕筋", "forearms"], groups.forearms);
 register(["腕", "上腕", "arms"], [...groups.biceps, ...groups.triceps]);
 register(["背中", "背筋", "back"], groups.back);
+register(["広背筋", "latissimus dorsi", "lats"], ["latissimus dorsi"]);
 register(["僧帽筋", "trapezius"], ["trapezius"]);
 register(["菱形筋", "rhomboids"], ["rhomboid"]);
-register(
-	["腹筋", "腹", "腹斜筋", "外腹斜筋", "abs", "core", "体幹"],
-	groups.abs,
-);
+register(["腹筋", "腹", "abs", "core", "体幹"], groups.abs);
+register(["腹直筋", "rectus abdominis"], ["rectus abdominis"]);
+register(["腹斜筋", "外腹斜筋", "external oblique"], ["external oblique"]);
 register(["臀部", "殿部", "お尻", "臀筋", "殿筋", "glutes"], groups.glutes);
 register(["大臀筋", "大殿筋"], ["gluteus maximus"]);
 register(["中臀筋", "中殿筋"], ["gluteus medius"]);

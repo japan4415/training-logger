@@ -14,6 +14,50 @@ import profiles from "../../src/domain/atlas-profiles.json";
 const empty = { primary: [], secondary: [], unavailable: [] };
 
 describe("Atlas assignments", () => {
+	it("labels the independently sourced trunk meshes with their true side", () => {
+		for (const [id, label, groupLabel] of [
+			["FMA13358", "右 広背筋", "広背筋"],
+			["FMA13359", "左 広背筋", "広背筋"],
+			["FMA13377", "右 腹直筋", "腹直筋"],
+			["FMA13378", "左 腹直筋", "腹直筋"],
+		]) {
+			expect(ATLAS_MUSCLES.find((muscle) => muscle.id === id)).toMatchObject({
+				id,
+				label,
+				groupLabel,
+			});
+		}
+		expect(atlasGroupLabels(["FMA13358", "FMA13359"])).toEqual(["広背筋"]);
+		expect(atlasGroupLabels(["FMA13377", "FMA13378"])).toEqual(["腹直筋"]);
+	});
+
+	it("assigns latissimus to pulls and rectus abdominis to leg-raise stabilization", () => {
+		for (const name of [
+			"ラットプルダウン",
+			"Lat Pulldown",
+			"シーテッドロウ",
+			"Seated Row",
+		]) {
+			const assignment = getDefaultAtlasAssignment(name);
+			expect(assignment?.primary).toEqual(
+				expect.arrayContaining(["FMA13358", "FMA13359"]),
+			);
+			expect(assignment?.unavailable).not.toContain("広背筋");
+		}
+		const legRaise = getDefaultAtlasAssignment("レッグレイズ");
+		expect(legRaise?.primary).toEqual([
+			"FJ1422",
+			"FJ1422M",
+			"FJ1431",
+			"FJ1431M",
+		]);
+		expect(legRaise?.secondary).toEqual(
+			expect.arrayContaining(["FMA13377", "FMA13378"]),
+		);
+		expect(legRaise?.primary).not.toContain("FMA13377");
+		expect(legRaise?.unavailable).not.toContain("腹直筋");
+	});
+
 	it("exposes only real, unique muscle IDs and validates all reviewed profiles", () => {
 		expect(new Set(ATLAS_MUSCLES.map((m) => m.id)).size).toBe(
 			ATLAS_MUSCLES.length,

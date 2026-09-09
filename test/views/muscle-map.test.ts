@@ -69,18 +69,42 @@ describe("Human Atlas muscle map", () => {
 	});
 
 	it("keeps unsupported free text without guessing an unrelated region", () => {
-		const muscles = [
-			"広背筋",
-			"腹直筋",
-			"胸の周辺",
-			"__proto__",
-			"constructor",
-		];
+		const muscles = ["胸の周辺", "__proto__", "constructor"];
 		expect(resolveAtlasMuscles(muscles)).toEqual({
 			patterns: [],
 			unmapped: muscles,
 		});
 	});
+
+	it.each([
+		["広背筋", ["FMA13358", "FMA13359"]],
+		["lats", ["FMA13358", "FMA13359"]],
+		["latissimus dorsi", ["FMA13358", "FMA13359"]],
+		["腹直筋", ["FMA13377", "FMA13378"]],
+		["rectus abdominis", ["FMA13377", "FMA13378"]],
+	])("resolves legacy %s to the actual bilateral meshes", (name, ids) => {
+		const anatomy = getExerciseAnatomy({
+			target_muscles: name,
+			atlas_muscles: null,
+		});
+		expect(anatomy.legacy).toBe(true);
+		expect(anatomy.assignment.primary.sort()).toEqual([...ids].sort());
+		expect(anatomy.assignment.unavailable).toEqual([]);
+	});
+
+	it.each(["腹筋", "abs"])(
+		"includes rectus and external oblique for broad %s",
+		(name) => {
+			const anatomy = getExerciseAnatomy({
+				target_muscles: name,
+				atlas_muscles: null,
+			});
+			expect(anatomy.assignment.primary).toEqual(
+				expect.arrayContaining(["FMA13377", "FMA13378", "FJ1452", "FJ1452M"]),
+			);
+			expect(anatomy.assignment.unavailable).toEqual([]);
+		},
+	);
 
 	it("resolves every supported group to muscles present in the shipped atlas", () => {
 		const regions = [
@@ -159,13 +183,13 @@ describe("Human Atlas muscle map", () => {
 	);
 
 	it("keeps names readable without JavaScript and supplies only resolved patterns", () => {
-		const html = render(["胸", "広背筋"]);
+		const html = render(["胸", "未対応の部位"]);
 		expect(html).toContain(
 			'data-primary-ids="[&quot;FJ1446&quot;,&quot;FJ1446M&quot;,&quot;FJ1447&quot;,&quot;FJ1447M&quot;,&quot;FJ1464&quot;,&quot;FJ1464M&quot;]"',
 		);
 		expect(html).toContain("<noscript>");
 		expect(html).toContain("大胸筋</span>");
-		expect(html).toContain("モデル未対応（名称のみ表示）: 広背筋");
+		expect(html).toContain("モデル未対応（名称のみ表示）: 未対応の部位");
 		expect(html).toContain('src="/js/muscle-atlas.js"');
 	});
 

@@ -127,7 +127,7 @@ jobs:
 
 Cloudflare Workers Builds（Git 連携）により、`main` ブランチへの push 時に自動デプロイが実行される。GitHub Actions の `deploy.yml` は使用しない。
 
-Cloudflare ダッシュボードで GitHub リポジトリを連携すると、`main` への push を検知して自動的にビルド・デプロイが行われる。D1 マイグレーションの適用も Workers Builds のビルドコマンドに含まれる。
+Cloudflare ダッシュボードで GitHub リポジトリを連携すると、`main` への push を検知して自動的にビルド・デプロイが行われる。現行のWorkers Builds設定はD1マイグレーションを自動適用しない。DB変更を含むPRでは、本番の `wrangler d1 migrations apply training-logger-db --remote` をデプロイ前に実行し、適用履歴を確認する（[運用手順](../migrations/README.md)）。ビルド成功だけではDB移行の完了を意味しない。
 
 ## バックアップ
 

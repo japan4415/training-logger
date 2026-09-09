@@ -690,7 +690,7 @@ https://training-logger.discord.jp/mcp
 
 ## Atlas筋肉の管理
 
-`register_exercise` は任意の `atlas_muscles` を受け付ける。構造は `{primary: string[], secondary: string[], unavailable: string[]}`。primary/secondaryはFJ形式の配信済み筋肉ID、unavailableはAtlas未収録の筋肉名。省略時は既知種目の初期プロファイルを採用し、明示NULLは従来の部位メモによる参考表示へ戻す。3配列が空のオブジェクトは対象筋なしの明示指定。
+`register_exercise` は任意の `atlas_muscles` を受け付ける。構造は `{primary: string[], secondary: string[], unavailable: string[]}`。primary/secondaryは配信済み筋肉ID（FJ形式と補完モデルのFMA形式）、unavailableはAtlas未収録の筋肉名。省略時は既知種目の初期プロファイルを採用し、明示NULLは従来の部位メモによる参考表示へ戻す。3配列が空のオブジェクトは対象筋なしの明示指定。
 
 - `list_atlas_muscles(query?: string)`: ID・英語名・日本語名でカタログを検索し、`{id,name,label,groupLabel}` を返す。左右を含む正確なIDを確認してから割り当てる。筋肉の未収録を別筋で代用しない。
 - `set_exercise_muscles(exercise_id: number, atlas_muscles: object | null)`: 種目の割当全体を置き換える。種目IDは正の整数。不明ID・不明筋肉IDはエラーとし、DBを変更しない。
