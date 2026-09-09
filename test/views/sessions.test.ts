@@ -19,6 +19,12 @@ async function request(
 	return app.fetch(req, env);
 }
 
+function atlasPatterns(html: string): string[] {
+	const value = html.match(/data-muscles="([^"]*)"/)?.[1];
+	expect(value).toBeDefined();
+	return JSON.parse(value?.replaceAll("&quot;", '"') ?? "[]");
+}
+
 /** Seed a minimal session with exercises for testing */
 async function seedTestData(db: D1Database): Promise<void> {
 	// Create exercises
@@ -311,17 +317,37 @@ describe("Session views", () => {
 			const res = await request("/sessions/1");
 			const html = await res.text();
 			// Session 1 has ベンチプレス (target_muscles: "胸, 三頭筋") and ウォーキング (null)
-			expect(html).toContain("鍛えた部位:");
+			expect(html).toContain('id="atlas-heading"');
+			expect(atlasPatterns(html)).toEqual([
+				"pectoralis major",
+				"triceps brachii",
+			]);
 			expect(html).toContain("胸");
 			expect(html).toContain("三頭筋");
 		});
 
 		it("displays target muscles from multiple exercises with deduplication", async () => {
+			await env.DB.prepare(
+				"UPDATE exercises SET target_muscles = ? WHERE id = ?",
+			)
+				.bind("腹筋, abs, 腹筋", 2)
+				.run();
 			const res = await request("/sessions/2");
 			const html = await res.text();
-			// Session 2 has ウォーキング (null) and レッグレイズ (target_muscles: "腹筋")
-			expect(html).toContain("鍛えた部位:");
-			expect(html).toContain("腹筋");
+			expect(html).toContain('id="atlas-heading"');
+			expect(atlasPatterns(html)).toEqual(["external oblique"]);
+			expect(
+				html.match(/class="target-muscle-tag">腹筋<\/span>/g),
+			).toHaveLength(1);
+		});
+
+		it("does not load the atlas for blank target muscle fields", async () => {
+			await env.DB.prepare("UPDATE exercises SET target_muscles = ?")
+				.bind(" , , ")
+				.run();
+			const html = await (await request("/sessions/1")).text();
+			expect(html).not.toContain("data-muscles=");
+			expect(html).not.toContain('src="/js/muscle-atlas.js"');
 		});
 
 		it("does not display target muscles section when no exercises have target_muscles", async () => {
@@ -341,7 +367,8 @@ describe("Session views", () => {
 				.run();
 			const res = await request("/sessions/10");
 			const html = await res.text();
-			expect(html).not.toContain("鍛えた部位:");
+			expect(html).not.toContain("data-muscles=");
+			expect(html).not.toContain('src="/js/muscle-atlas.js"');
 		});
 
 		it("excludes skipped and planned exercises from target muscles summary", async () => {
@@ -396,7 +423,19 @@ describe("Session views", () => {
 			const res = await request("/sessions/20");
 			const html = await res.text();
 			// Only completed exercise's target_muscles should appear
-			expect(html).toContain("鍛えた部位:");
+			expect(html).toContain('id="atlas-heading"');
+			expect(atlasPatterns(html)).toEqual([
+				"rectus femoris",
+				"vastus",
+				"biceps femoris",
+				"semitendinosus",
+				"semimembranosus",
+				"gastrocnemius",
+				"soleus",
+				"adductor",
+				"gracilis",
+				"gluteus",
+			]);
 			expect(html).toContain("脚");
 			// Skipped and planned exercises' target_muscles should NOT appear in the summary tags
 			expect(html).not.toContain('<span class="target-muscle-tag">肩</span>');

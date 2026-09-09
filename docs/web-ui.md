@@ -268,3 +268,23 @@ Chart.js はバンドルに含めず CDN から読み込む。データの受け
 
 - `/css/style.css` -- スタイルシート（モバイルファースト設計）
 - `/js/chart-init.js` -- Chart.js 初期化スクリプト
+
+## Human Atlas による対象部位の立体表示
+
+セッション詳細には `human-atlas` の BodyParts3D モデルを利用した筋肉マップを表示する。完了した種目だけを既存の `aggregateTargetMuscles` で集計し、`muscle-map.tsx` の明示的な日本語・英語別名表で筋肉へ対応付ける。DB の自由記述形式は維持する。未知の名称やモデルに含まれない広背筋・腹直筋は名称のみ表示し、別の筋肉に置き換えない。「背中」「腹筋」などの総称は収録されている筋肉による参考表示となる。
+
+- 対象筋は青緑、その他はグレー。正面・背面ボタン、横ドラッグ、左右矢印キーで向きを変えられる。
+- 約3.58MBのgzipモデルとThree.jsは同一オリジンで配信。記録データを外部のビューアーに送信しない。
+- WebGL未対応・通信失敗・JavaScript無効時も部位名の一覧を利用できる。自動回転や常時描画はしない。
+- 主要筋・前腕・内転筋128メッシュと全身表面を収録。元モデルのライセンスと改変内容は `public/models/human-atlas/ATTRIBUTION.md` に保持する。
+
+アセット更新（通常のビルドでは再取得不要）:
+
+```bash
+git clone https://github.com/ashemag/human-atlas /tmp/human-atlas
+git -C /tmp/human-atlas checkout 1c38bf35c254a891200d3cedecfd57abebe83d8d
+node scripts/import-human-atlas.mjs /tmp/human-atlas
+node scripts/vendor-three.mjs
+```
+
+Three.jsは `package.json` / lockfile の固定バージョンを使用し、配信用ファイルとMITライセンスを同梱する。モデル更新時は対応付け・gzip読込・前後表示・モバイル幅を再確認する。
