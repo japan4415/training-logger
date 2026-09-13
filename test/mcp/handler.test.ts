@@ -81,6 +81,8 @@ describe("MCP handler", () => {
 
 			const toolNames = data.result.tools.map((t) => t.name);
 			expect(toolNames).toContain("create_feedback");
+			expect(toolNames).toContain("create_photo_upload_link");
+			expect(toolNames).toContain("upload_session_photo");
 
 			const feedbackTool = data.result.tools.find(
 				(t) => t.name === "create_feedback",

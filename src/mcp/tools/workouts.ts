@@ -381,7 +381,7 @@ export async function deleteWorkoutHandler(
 
 	// Delete entire session
 	if (params.delete_entire_session) {
-		await deleteSession(db, session.id);
+		await deleteSession(env, session.id);
 		return { deleted: "session", date: params.date };
 	}
 

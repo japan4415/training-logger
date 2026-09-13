@@ -1,3 +1,5 @@
+import type { Bindings } from "../env.js";
+import { deleteSessionPhotosForSession } from "./session-photos.js";
 import type { WorkoutSessionRow } from "./types.js";
 
 /**
@@ -153,9 +155,24 @@ export async function updateSession(
  * CASCADE deletes session_exercises and sets.
  */
 export async function deleteSession(
-	db: D1Database,
+	dbOrEnv: D1Database | Pick<Bindings, "DB" | "PHOTOS">,
 	id: number,
 ): Promise<boolean> {
+	let env: Pick<Bindings, "DB" | "PHOTOS"> | null = null;
+	let db: D1Database;
+	if ("DB" in dbOrEnv) {
+		env = dbOrEnv;
+		db = dbOrEnv.DB;
+	} else {
+		db = dbOrEnv;
+	}
+	if (env) {
+		try {
+			await deleteSessionPhotosForSession(env, id);
+		} catch (error) {
+			console.error("Failed to delete session photos from R2", error);
+		}
+	}
 	const result = await db
 		.prepare("DELETE FROM workout_sessions WHERE id = ?")
 		.bind(id)

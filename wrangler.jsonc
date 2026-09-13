@@ -19,6 +19,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "training-logger-photos"
+    }
+  ],
   // Observability: console.log/error の出力とリクエストトレースを有効化
   "observability": {
     "enabled": true,
