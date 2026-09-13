@@ -29,7 +29,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 ## ツール定義
 
-本サーバは 6 つのツールを提供する。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
+本サーバは 9 つのツールを提供する（記録系 6 + Atlas 筋肉管理 2 + 機能リクエスト 1）。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
 
 ### search_exercises
 
@@ -460,11 +460,59 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 - 該当データなしの場合は空の結果を返す（エラーにしない）
 
+### create_feedback
+
+training-logger への機能要望・不具合報告・種目追加要望を GitHub issue として起票。
+
+**説明文** (LLM 向け):
+
+> training-logger への機能要望・不具合報告・種目追加要望を GitHub issue として起票します。ツールのスキーマで表現できない単位や項目に遭遇したとき、ユーザーの同意を得てから使ってください。
+
+**入力スキーマ**:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Issue のタイトル（1〜200文字）"
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Issue の本文（要望・不具合・種目追加の詳細）"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["feature", "bug", "exercise_request", "other"],
+      "default": "feature",
+      "description": "フィードバックのカテゴリ"
+    }
+  },
+  "required": ["title", "body"]
+}
+```
+
+**挙動**:
+
+1. `env.GITHUB_TOKEN` が未設定の場合、`isError: true` とともに事前入力済み URL `https://github.com/{owner}/{repo}/issues/new?title=<encoded>&body=<encoded>&labels=enhancement,from-mcp` を返し、LLM が手動起票を案内できるようにする。リポジトリは環境変数 `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` で上書き可能（既定値: `japan4415` / `training-logger`）
+2. `GET https://api.github.com/repos/{owner}/{repo}/issues?state=open&per_page=100&page=N` を `page=1` から順に呼び出し、返却件数が 100 未満になるまで（上限 10 ページ）走査する。返却要素のうち Pull Request（`pull_request` フィールドを持つ要素）を除外した上で、`title` が完全一致（trim 後）する open issue があれば新規起票せず `{ duplicate: true, issue_number, html_url, title }` を返す。上限 10 ページに達した場合は走査を打ち切り、それ以降の重複は検出しない
+3. `POST https://api.github.com/repos/{owner}/{repo}/issues` を `fetch` で呼ぶ。ヘッダに `Accept: application/vnd.github+json`、`Authorization: Bearer <token>`、`X-GitHub-Api-Version: 2022-11-28`、`User-Agent: training-logger-mcp`、`Content-Type: application/json` を設定。本文末尾に `\n\n---\n起票元: training-logger MCP create_feedback (category: <category>)` を付加し、ラベルに `["enhancement", "from-mcp"]` を指定する
+4. 201 成功時は `{ issue_number, html_url, title, state }` を返す
+
+**エラー応答**:
+
+- `GITHUB_TOKEN` 未設定時: `isError: true` でエラーメッセージと手動起票用の事前入力 URL を返す
+- GitHub API エラー（401 / 403 / 422 / 5xx）: `isError: true` で HTTP ステータスコードと GitHub のエラーメッセージを含む LLM 向けメッセージを返す
+
 ## ツール設計の指針
 
-### ツール数を 6 に絞った理由
+### ツール設計と責務の分離
 
-LLM のツール選択精度はツール数が増えるほど低下する。日常的な筋トレ記録に必要な CRUD 操作（検索・登録・記録・更新・削除・照会）を必要最小限の 6 ツールに整理した。GitHub Issue の起票はチャットクライアント側の GitHub MCP コネクタや `gh` CLI で直接行う。
+LLM のツール選択精度はツール数が増加するほど低下する。そのため本サーバではツールを必要最小限の 9 ツール（記録系 6 + Atlas 筋肉管理 2 + 機能リクエスト 1）に整理している。日常的な筋トレ記録の CRUD（検索・登録・記録・更新・削除・照会）と Atlas 筋肉割当、およびスキーマで表現できない要望の issue 起票に絞り、明確な責務分離を行っている。
 
 ### 説明文の書き方
 
@@ -480,13 +528,15 @@ LLM のツール選択精度はツール数が増えるほど低下する。日�
 
 ### サーバーレベルの instructions
 
-`McpServer` コンストラクタの `instructions` フィールド（MCP 仕様の `InitializeResult.instructions`）に、ツール横断の運用ルールを以下の 5 セクションで記述している:
+`McpServer` コンストラクタの `instructions` フィールド（MCP 仕様の `InitializeResult.instructions`）に、ツール横断の運用ルールを以下の 5 セクションでスリムに記述している:
 
-1. **種目の登録** -- 新規登録前の重複確認（日本語名・英語名の両方で検索）
-2. **日時の扱い** -- 全日付は Asia/Tokyo (JST) 基準。相対表現（「昨日」「先週月曜」等）も JST で解釈
-3. **記録の運用** -- 同日の再呼び出しは追記（上書きではない）。修正は `update_workout`、削除は `delete_workout`
-4. **対応できない入力** -- スキーマで表現できないパラメータに遭遇した場合の案内と issue 起票の誘導
-5. **手書きノートの速記法** -- `reps/weight` 形式の速記（例: 「20/10」= 20回・重量10）の解釈ルール
+1. **種目の登録** -- 新規登録前に `search_exercises` で日本語名・英語名の両方を検索して重複確認
+2. **日時の扱い** -- すべて Asia/Tokyo。`date` 省略時は JST の今日。相対表現も JST で解釈
+3. **記録の運用** -- 同日の `log_workout` 再呼び出しは追記。修正は `update_workout`、削除は `delete_workout`。ノート画像からの登録は、不明点を確認し下書きをユーザーに見せて承認を得てから `log_workout` を呼ぶ（詳細な手順は Skill `log-workout` を参照）
+4. **対応できない入力** -- スキーマで表現できない項目・単位に遭遇したらユーザーに伝え、同意を得て `create_feedback` で issue を起票する
+5. **手書きノートの速記法** -- 「reps/weight」形式（例「20/10」= 20 回・重量 10）。複数並ぶ場合は各々を独立したセットとして扱う。単位不明なら `get_history` で前回を参照するかユーザーに確認
+
+ノート画像からの詳細な登録手順は Skill（[docs/skill.md](./skill.md)）を参照のこと。
 
 各ツールの `description` は個々のツールの用途・引数を説明する場であり、横断ルールまで繰り返すと冗長になるため、サーバーレベルの instructions で一元管理する。Claude の Skill（`claude_skill`）ではなく MCP ネイティブの `instructions` を採用したのは、ChatGPT を含むすべての MCP クライアントに配信でき、クライアント固有の設定に依存しないためである。
 
@@ -687,6 +737,25 @@ https://training-logger.discord.jp/mcp
 
 **LLM の応答**:
 > 8/16 の記録を登録しました! 9種目の実施記録（ウォーキング2回を含む）、計16セットを記録しています。レッグレイズは計画2セットに対して実績3セットも記録しました。
+
+### 例 4: スキーマで表現できない項目の要望起票（create_feedback）
+
+**ユーザー**:
+> 心拍数ゾーンごとの滞在時間も記録したいんだけど、入力できる?
+
+**LLM の処理**: スキーマで対応していないことを説明し、ユーザーの同意を得てから `create_feedback` を呼び出す
+
+```json
+{
+  "title": "有酸素運動における心拍数ゾーン滞在時間の記録サポート要望",
+  "body": "ウォーキングやランニングの記録時に、心拍数ゾーン（ゾーン2など）の滞在時間を記録したいという要望です。現行スキーマでは時間・距離・速度・傾斜のみ対応しています。",
+  "category": "feature"
+}
+```
+
+**LLM の応答**:
+> GitHub issue #58 を起票しました: [有酸素運動における心拍数ゾーン滞在時間の記録サポート要望](https://github.com/japan4415/training-logger/issues/58)
+> 機能が追加されるまで、当面はセットのメモ欄（notes）に「ゾーン2: 15分」のように記録しておくことをお勧めします。
 
 ## Atlas筋肉の管理
 

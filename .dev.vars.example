@@ -1,0 +1,6 @@
+# GitHub fine-grained Personal Access Token (Permissions: Issues: Read and write)
+GITHUB_TOKEN=github_pat_xxx
+
+# Optional: Override repository (defaults to japan4415/training-logger)
+# GITHUB_REPO_OWNER=japan4415
+# GITHUB_REPO_NAME=training-logger

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Bindings } from "../env.js";
 import { registerExerciseTools } from "./tools/exercises.js";
+import { registerFeedbackTools } from "./tools/feedback.js";
 import { registerHistoryTools } from "./tools/history.js";
 import { registerWorkoutTools } from "./tools/workouts.js";
 
@@ -15,23 +16,19 @@ const SERVER_INSTRUCTIONS = `\
 個人用の筋トレ記録サーバーです。以下のルールに従ってください。
 
 ■ 種目の登録
-- 新しい種目を登録する前に、必ず search_exercises で既存種目を検索して重複がないか確認してください。
-- 日本語名と英語名の両方で検索すると確実です。
+新規登録前に search_exercises で日本語名・英語名の両方を検索して重複確認してください。
 
 ■ 日時の扱い
-- 日付はすべて Asia/Tokyo (JST) 基準です。date パラメータを省略すると JST の今日が使われます。
-- ユーザーが「昨日」「先週月曜」のような相対表現を使った場合、JST で解釈してください。
+すべて Asia/Tokyo です。date 省略時は JST の今日が使われます。相対表現も JST で解釈してください。
 
 ■ 記録の運用
-- 同じ日に再度 log_workout を呼ぶと、既存セッションに種目が追加されます（上書きではありません）。
-- 記録の修正には update_workout、削除には delete_workout を使ってください。
+同日の log_workout 再呼び出しは追記です。修正は update_workout、削除は delete_workout を使ってください。ノート画像からの登録は、不明点を確認し下書きをユーザーに見せて承認を得てから log_workout を呼んでください（詳細な手順は Skill log-workout を参照）。
 
 ■ 対応できない入力
-- ツールのスキーマで表現できない種目パラメータや測定単位に遭遇した場合、その旨をユーザーに伝えてください。
-- 必要に応じて https://github.com/japan4415/training-logger/issues/new への issue 起票を案内してください。
+ツールのスキーマで表現できない項目・単位に遭遇したらユーザーに伝え、同意を得て create_feedback で issue を起票してください。
 
 ■ 手書きノートの速記法
-ユーザーは手書きノートで「reps/weight」形式の速記を使うことがあります（例: 「20/10」は20回・重量10）。スラッシュの左が回数(reps)、右が重量またはレベル(weight)です。複数セットが並ぶ場合（例: 「20/15 20/15」）、それぞれが独立したセットの reps/weight として扱ってください。単位（kg/lbs/レベル）が明記されていない場合は、種目や器具の種類から推測するか、不明であればユーザーに確認してください。`;
+「reps/weight」形式（例「20/10」= 20回・重量10）です。複数並ぶ場合は各々を独立したセットとして扱ってください。単位不明なら get_history で前回を参照するかユーザーに確認してください。`;
 
 /**
  * Create a new McpServer instance configured for training-logger.
@@ -54,6 +51,7 @@ export function createMcpServer(env: Bindings): McpServer {
 	registerExerciseTools(server, env);
 	registerWorkoutTools(server, env);
 	registerHistoryTools(server, env);
+	registerFeedbackTools(server, env);
 
 	return server;
 }
