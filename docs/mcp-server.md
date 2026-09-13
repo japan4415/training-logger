@@ -400,7 +400,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **挙動**:
 
-- `delete_entire_session = true` の場合: 写真本体を R2 から削除してから `workout_sessions` を DELETE する。CASCADE により配下の `session_photos`、`session_exercises`、`sets` も削除される
+- `delete_entire_session = true` の場合: 写真本体を R2 から削除してから `workout_sessions` を DELETE する。CASCADE により配下の `session_photos`、`session_exercises`、`sets` も削除される。D1 削除後の事後スイープは `sessions/{YYYY-MM-DD}/{sessionId}/` のセッション固有プレフィックスだけを対象にする
 - `delete_entire_session = false` の場合: 指定した `session_exercises` を DELETE する。CASCADE により配下の `sets` も削除される
 
 **エラー応答**:
@@ -490,6 +490,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 1. `date` で `workout_sessions` を検索する
 2. セッションがあれば、`session_id`、`date`、`https://training-logger.discord.jp/sessions/{session_id}#photos`、上限情報を返す
 3. ユーザーには返された URL をブラウザで開き、写真セクションから同じ写真を選ぶよう案内する
+4. ブラウザから保存された写真本体は R2 の `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` キーに格納する
 
 ```json
 {

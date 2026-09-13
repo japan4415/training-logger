@@ -170,7 +170,7 @@ async function seedSessionPhotos(sessionId: number, count = 2): Promise<void> {
 	const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 	for (let index = 0; index < count; index++) {
 		const id = `photo-${index + 1}`;
-		const r2Key = `sessions/2026-08-15/${id}.png`;
+		const r2Key = `sessions/2026-08-15/${sessionId}/${id}.png`;
 		await env.PHOTOS.put(r2Key, bytes, {
 			httpMetadata: {
 				contentType: "image/png",
@@ -318,6 +318,7 @@ describe("Session views", () => {
 			expect(html).toContain('aria-expanded="false"');
 			expect(html).toContain('<fieldset id="photo-delete-confirm-photo-1"');
 			expect(html).toContain('class="photo-upload-form"');
+			expect(html).toContain('data-max-photos="4"');
 			expect(html).toContain('accept="image/jpeg,image/png,image/webp"');
 			expect(html).not.toContain(" multiple");
 		});

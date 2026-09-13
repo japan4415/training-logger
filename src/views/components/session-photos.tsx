@@ -18,6 +18,7 @@ export function SessionPhotos(props: {
 			class="session-photos-content"
 			data-fragment-url={fragmentUrl}
 			data-photo-count={photos.length}
+			data-max-photos={PHOTO_MAX_PER_SESSION}
 		>
 			{photos.length === 0 ? (
 				<p class="session-photos-empty">写真はまだありません</p>
@@ -80,7 +81,8 @@ export function SessionPhotos(props: {
 			{photos.length >= PHOTO_MAX_PER_SESSION ? (
 				<>
 					<p class="photo-upload-limit">
-						4枚まで追加済みです。追加するには削除してください。
+						{PHOTO_MAX_PER_SESSION}
+						枚まで追加済みです。追加するには削除してください。
 					</p>
 					<p class="photo-upload-status" role="status" aria-live="polite" />
 				</>

@@ -1,7 +1,6 @@
 (() => {
 	"use strict";
 
-	const MAX_PHOTOS = 4;
 	const MUTATION_CONTROLS = [
 		".photo-upload-input",
 		".photo-upload-submit",
@@ -54,7 +53,14 @@
 		status.dataset.state = isError ? "error" : "info";
 	}
 
-	async function responseError(response) {
+	function maxPhotosFor(source) {
+		const value = Number(
+			source.closest(".session-photos-content")?.dataset.maxPhotos,
+		);
+		return Number.isInteger(value) && value > 0 ? value : null;
+	}
+
+	async function responseError(response, source) {
 		let error = "";
 		try {
 			error = (await response.json()).error || "";
@@ -69,7 +75,10 @@
 			return "写真は1枚10 MiB以下にしてください。";
 		}
 		if (error === "limit_exceeded") {
-			return "写真は1セッションにつき4枚までです。";
+			const maxPhotos = maxPhotosFor(source);
+			return maxPhotos
+				? `写真は1セッションにつき${maxPhotos}枚までです。`
+				: "写真の保存枚数が上限に達しています。";
 		}
 		if (response.status === 401 && error === "access_not_configured") {
 			return "アップロード認証が設定されていません。管理者に確認してください。";
@@ -192,10 +201,11 @@
 		const currentCount = Number(
 			form.closest(".session-photos-content")?.dataset.photoCount || "0",
 		);
-		if (files.length > MAX_PHOTOS - currentCount) {
+		const maxPhotos = maxPhotosFor(form);
+		if (maxPhotos !== null && files.length > maxPhotos - currentCount) {
 			setStatus(
 				form,
-				`追加できる写真は残り${Math.max(0, MAX_PHOTOS - currentCount)}枚です。`,
+				`追加できる写真は残り${Math.max(0, maxPhotos - currentCount)}枚です。`,
 				true,
 			);
 			return;
@@ -216,7 +226,7 @@
 					credentials: "same-origin",
 				});
 				if (!response.ok) {
-					const detail = await responseError(response);
+					const detail = await responseError(response, form);
 					const message = `${successfulCount}件成功、${index + 1}件目（${activeFile.name}）のアップロードに失敗しました。${detail}`;
 					input.value = "";
 					if (successfulCount > 0) {
@@ -310,7 +320,7 @@
 				credentials: "same-origin",
 			});
 			if (!response.ok) {
-				setStatus(confirm, await responseError(response), true);
+				setStatus(confirm, await responseError(response, confirm), true);
 				if (question) question.textContent = "削除しますか？";
 				return;
 			}

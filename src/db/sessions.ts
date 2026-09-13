@@ -172,7 +172,11 @@ export async function deleteSession(
 		.run();
 	const deleted = result.meta.changes > 0;
 	if (deleted) {
-		await sweepSessionPhotoObjects(env.PHOTOS, session.session_date);
+		await sweepSessionPhotoObjects(
+			env.PHOTOS,
+			session.session_date,
+			session.id,
+		);
 	}
 	return deleted;
 }

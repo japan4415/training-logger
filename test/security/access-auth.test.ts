@@ -121,6 +121,25 @@ describe("Cloudflare Access authentication", () => {
 		expect(fetchFn).toHaveBeenCalledOnce();
 	});
 
+	it("reuses a fetched JWKS for the same signing key", async () => {
+		const fetchFn = jwksFetch();
+		const token = await jwt({
+			sub: "user-id",
+			aud: AUDIENCE,
+			exp: Math.floor(Date.now() / 1000) + 60,
+		});
+		const app = appFor(fetchFn);
+		for (let index = 0; index < 2; index++) {
+			const response = await app.request(
+				"/read",
+				{ headers: { "Cf-Access-Jwt-Assertion": token } },
+				bindings(),
+			);
+			expect(response.status).toBe(200);
+		}
+		expect(fetchFn).toHaveBeenCalledOnce();
+	});
+
 	it.each([
 		["expired", { aud: AUDIENCE, exp: Math.floor(Date.now() / 1000) - 1 }],
 		[

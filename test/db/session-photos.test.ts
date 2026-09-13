@@ -292,7 +292,7 @@ describe("session photos DB service", () => {
 						if (!injected) {
 							injected = true;
 							await target.put(
-								"sessions/2026-09-14/concurrent-upload.jpg",
+								`sessions/2026-09-14/${session.id}/concurrent-upload.jpg`,
 								IMAGES.jpeg,
 							);
 						}
@@ -307,8 +307,54 @@ describe("session photos DB service", () => {
 			true,
 		);
 		expect(
-			(await env.PHOTOS.list({ prefix: "sessions/2026-09-14/" })).objects,
+			(
+				await env.PHOTOS.list({
+					prefix: `sessions/2026-09-14/${session.id}/`,
+				})
+			).objects,
 		).toHaveLength(0);
+	});
+
+	it("does not sweep photos from a recreated session on the same date", async () => {
+		const { session } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const staleKey = `sessions/2026-09-14/${session.id}/concurrent-upload.jpg`;
+		let replacementId: number | undefined;
+		let replacementPhotoKey: string | undefined;
+		const photos = new Proxy(env.PHOTOS, {
+			get(target, property) {
+				if (property === "list") {
+					return async (options: R2ListOptions) => {
+						await target.put(staleKey, IMAGES.jpeg);
+						const { session: replacement } = await getOrCreateSession(env.DB, {
+							sessionDate: "2026-09-14",
+						});
+						const stored = await storeSessionPhoto(
+							env,
+							replacement,
+							IMAGES.jpeg,
+						);
+						if (!stored.ok) throw new Error(stored.error);
+						replacementId = replacement.id;
+						replacementPhotoKey = stored.photo.r2_key;
+						return target.list(options);
+					};
+				}
+				const value = Reflect.get(target, property, target);
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+		});
+
+		expect(await deleteSession({ ...env, PHOTOS: photos }, session.id)).toBe(
+			true,
+		);
+		expect(replacementId).not.toBe(session.id);
+		expect(replacementPhotoKey).toContain(
+			`sessions/2026-09-14/${replacementId}/`,
+		);
+		expect(await env.PHOTOS.get(staleKey)).toBeNull();
+		expect(await env.PHOTOS.get(replacementPhotoKey ?? "")).not.toBeNull();
 	});
 
 	it("keeps a successful D1 deletion when the post-sweep fails", async () => {
@@ -333,7 +379,9 @@ describe("session photos DB service", () => {
 		);
 		expect(error).toHaveBeenCalledWith(
 			"Failed to sweep session photo R2 objects",
-			expect.objectContaining({ prefix: "sessions/2026-09-14/" }),
+			expect.objectContaining({
+				prefix: `sessions/2026-09-14/${session.id}/`,
+			}),
 		);
 		expect(
 			await env.DB.prepare("SELECT id FROM workout_sessions WHERE id = ?")

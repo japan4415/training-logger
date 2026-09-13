@@ -19,6 +19,65 @@ interface JwksResponse {
 	keys?: Array<JsonWebKey & { kid?: string }>;
 }
 
+interface CachedJwk {
+	jwk: JsonWebKey;
+	expiresAt: number;
+}
+
+const JWKS_CACHE_TTL_MS = 10 * 60 * 1000;
+const jwksCaches = new WeakMap<FetchFn, Map<string, CachedJwk>>();
+const pendingJwksRequests = new WeakMap<FetchFn, Map<string, Promise<void>>>();
+
+async function getAccessJwk(
+	teamDomain: string,
+	kid: string,
+	fetchFn: FetchFn,
+): Promise<JsonWebKey> {
+	let cache = jwksCaches.get(fetchFn);
+	if (!cache) {
+		cache = new Map();
+		jwksCaches.set(fetchFn, cache);
+	}
+	const cacheKey = `${teamDomain}\u0000${kid}`;
+	const cached = cache.get(cacheKey);
+	if (cached && cached.expiresAt > Date.now()) return cached.jwk;
+	cache.delete(cacheKey);
+
+	let pendingByDomain = pendingJwksRequests.get(fetchFn);
+	if (!pendingByDomain) {
+		pendingByDomain = new Map();
+		pendingJwksRequests.set(fetchFn, pendingByDomain);
+	}
+	let pending = pendingByDomain.get(teamDomain);
+	if (!pending) {
+		pending = (async () => {
+			const response = await fetchFn(
+				`https://${teamDomain}/cdn-cgi/access/certs`,
+			);
+			if (!response.ok) throw new Error("Unable to fetch Access JWKS");
+			const jwks = (await response.json()) as JwksResponse;
+			const expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+			for (const jwk of jwks.keys ?? []) {
+				if (jwk.kid) {
+					cache.set(`${teamDomain}\u0000${jwk.kid}`, { jwk, expiresAt });
+				}
+			}
+		})();
+		pendingByDomain.set(teamDomain, pending);
+	}
+	try {
+		await pending;
+	} finally {
+		if (pendingByDomain.get(teamDomain) === pending) {
+			pendingByDomain.delete(teamDomain);
+		}
+	}
+
+	const fetched = cache.get(cacheKey);
+	if (!fetched) throw new Error("JWT signing key not found");
+	return fetched.jwk;
+}
+
 function decodeBase64Url(value: string): Uint8Array {
 	if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("Invalid JWT encoding");
 	const padded = value
@@ -68,12 +127,7 @@ export async function verifyAccessJwt(
 		throw new Error("JWT audience mismatch");
 	}
 
-	const jwksUrl = `https://${teamDomain}/cdn-cgi/access/certs`;
-	const response = await fetchFn(jwksUrl);
-	if (!response.ok) throw new Error("Unable to fetch Access JWKS");
-	const jwks = (await response.json()) as JwksResponse;
-	const jwk = jwks.keys?.find((key) => key.kid === header.kid);
-	if (!jwk) throw new Error("JWT signing key not found");
+	const jwk = await getAccessJwk(teamDomain, header.kid, fetchFn);
 
 	const key = await crypto.subtle.importKey(
 		"jwk",
