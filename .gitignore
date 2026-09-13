@@ -22,3 +22,6 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+
+# Workflow runs
+.workflow-runs/
