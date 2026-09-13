@@ -166,6 +166,33 @@ async function seedTestData(db: D1Database): Promise<void> {
 	]);
 }
 
+async function seedSessionPhotos(sessionId: number): Promise<void> {
+	const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+	for (const [index, id] of ["photo-1", "photo-2"].entries()) {
+		const r2Key = `sessions/2026-08-15/${id}.png`;
+		await env.PHOTOS.put(r2Key, bytes, {
+			httpMetadata: {
+				contentType: "image/png",
+				cacheControl: "private, no-store",
+			},
+		});
+		await env.DB.prepare(
+			`INSERT INTO session_photos
+				(id, session_id, r2_key, content_type, size_bytes, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+		)
+			.bind(
+				id,
+				sessionId,
+				r2Key,
+				"image/png",
+				bytes.byteLength,
+				`2026-08-15T00:00:0${index}Z`,
+			)
+			.run();
+	}
+}
+
 describe("Session views", () => {
 	beforeAll(async () => {
 		await applyMigrations(env.DB);
@@ -255,6 +282,49 @@ describe("Session views", () => {
 	});
 
 	describe("GET /sessions/:id (session detail)", () => {
+		it("renders a closed photo details without loading images", async () => {
+			const html = await (await request("/sessions/1")).text();
+			expect(html).toContain(
+				'<details class="session-photos" id="photos"><summary>写真 (0)</summary>',
+			);
+			expect(html).not.toContain(
+				'<details class="session-photos" id="photos" open',
+			);
+			expect(html).not.toContain("<img");
+			expect(html).toContain('href="/sessions/1/photos">写真を表示</a>');
+		});
+
+		it("shows the photo count in the session detail summary", async () => {
+			await seedSessionPhotos(1);
+			const html = await (await request("/sessions/1")).text();
+			expect(html).toContain("<summary>写真 (2)</summary>");
+			expect(html).not.toContain("<img");
+		});
+
+		it("returns an image grid and upload form as an htmx fragment", async () => {
+			await seedSessionPhotos(1);
+			const response = await request("/sessions/1/photos", {
+				headers: { "HX-Request": "true" },
+			});
+			expect(response.status).toBe(200);
+			const html = await response.text();
+			expect(html).not.toContain("<!DOCTYPE html>");
+			expect(html).not.toContain("<html");
+			expect(html.match(/<img/g)).toHaveLength(2);
+			expect(html).toContain('loading="lazy"');
+			expect(html).toContain('class="photo-upload-form"');
+			expect(html).toContain(
+				'accept="image/jpeg,image/png,image/webp" multiple',
+			);
+		});
+
+		it("returns 404 for a missing session photo fragment", async () => {
+			const response = await request("/sessions/9999/photos", {
+				headers: { "HX-Request": "true" },
+			});
+			expect(response.status).toBe(404);
+		});
+
 		it("merges only completed exact assignments and gives primary IDs precedence", async () => {
 			await env.DB.batch([
 				env.DB.prepare(

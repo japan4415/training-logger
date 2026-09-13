@@ -1,8 +1,11 @@
 import type { Context } from "hono";
 import { getSessionDetail } from "../db/queries.js";
+import { listSessionPhotos } from "../db/session-photos.js";
+import { getSessionById } from "../db/sessions.js";
 import type { Bindings } from "../env.js";
 import { getSessionAnatomy, MuscleMap } from "./components/muscle-map.js";
 import { formatDateWithDay } from "./components/session-card.js";
+import { SessionPhotos } from "./components/session-photos.js";
 import { SetTable } from "./components/set-table.js";
 import { Layout } from "./layout.js";
 
@@ -70,6 +73,7 @@ export async function sessionDetailHandler(
 
 	const { session, exercises } = detail;
 	const anatomy = getSessionAnatomy(exercises);
+	const photos = await listSessionPhotos(db, id);
 
 	return c.html(
 		<Layout title="セッション詳細" activeNav="sessions">
@@ -159,9 +163,70 @@ export async function sessionDetailHandler(
 					</div>
 				)}
 
+				<details class="session-photos" id="photos">
+					<summary>写真 ({photos.length})</summary>
+					<div
+						id="session-photos-target"
+						hx-get={`/sessions/${id}/photos`}
+						hx-trigger="toggle once from:closest details"
+						hx-target="this"
+						hx-swap="innerHTML"
+					>
+						<p class="session-photos-fallback">
+							<a href={`/sessions/${id}/photos`}>写真を表示</a>
+						</p>
+					</div>
+				</details>
+
 				{/* Back to list */}
 				<div class="back-link">
 					<a href="/">セッション一覧に戻る</a>
+				</div>
+			</div>
+		</Layout>,
+	);
+}
+
+export async function sessionPhotosHandler(
+	c: Context<{ Bindings: Bindings }>,
+): Promise<Response> {
+	const idParam = c.req.param("id") ?? "";
+	const id = Number.parseInt(idParam, 10);
+	if (Number.isNaN(id)) {
+		return c.html(
+			<Layout title="セッション写真" activeNav="sessions">
+				<p class="error-message">無効なセッションIDです</p>
+			</Layout>,
+			400,
+		);
+	}
+
+	const session = await getSessionById(c.env.DB, id);
+	if (!session) {
+		return c.html(
+			<Layout title="セッション写真" activeNav="sessions">
+				<p class="error-message">セッションが見つかりません</p>
+			</Layout>,
+			404,
+		);
+	}
+
+	const photos = await listSessionPhotos(c.env.DB, id);
+	if (c.req.header("HX-Request") === "true") {
+		return c.html(<SessionPhotos sessionId={id} photos={photos} />);
+	}
+
+	return c.html(
+		<Layout title="セッション写真" activeNav="sessions">
+			<div class="session-detail">
+				<h1 class="session-photos-page-title">
+					{formatDateWithDay(session.session_date)}の写真
+				</h1>
+				<div id="session-photos-target">
+					<SessionPhotos sessionId={id} photos={photos} />
+				</div>
+				<div class="back-link">
+					<a href={`/sessions/${id}#photos`}>セッション詳細に戻る</a>
 				</div>
 			</div>
 		</Layout>,

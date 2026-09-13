@@ -3,7 +3,10 @@ import { getHistory } from "../db/queries.js";
 import type { Bindings } from "../env.js";
 import { SessionCard } from "./components/session-card.js";
 import { Layout } from "./layout.js";
-import { sessionDetailHandler } from "./session-detail.js";
+import {
+	sessionDetailHandler,
+	sessionPhotosHandler,
+} from "./session-detail.js";
 
 /** Get current year/month in Asia/Tokyo timezone */
 function getCurrentYearMonth(): { year: number; month: number } {
@@ -190,4 +193,5 @@ export function registerSessionViews(app: Hono<{ Bindings: Bindings }>): void {
 
 	// Session detail
 	app.get("/sessions/:id", sessionDetailHandler);
+	app.get("/sessions/:id/photos", sessionPhotosHandler);
 }
