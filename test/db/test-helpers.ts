@@ -78,6 +78,17 @@ export async function applyMigrations(db: D1Database): Promise<void> {
 		db.prepare(
 			"CREATE INDEX IF NOT EXISTS idx_sets_session_exercise ON sets(session_exercise_id)",
 		),
+		db.prepare(`CREATE TABLE IF NOT EXISTS session_photos (
+			id TEXT PRIMARY KEY,
+			session_id INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+			r2_key TEXT NOT NULL UNIQUE,
+			content_type TEXT NOT NULL,
+			size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+			created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+		)`),
+		db.prepare(
+			"CREATE INDEX IF NOT EXISTS idx_session_photos_session_id ON session_photos(session_id)",
+		),
 	]);
 }
 
@@ -87,6 +98,7 @@ export async function applyMigrations(db: D1Database): Promise<void> {
  */
 export async function cleanDatabase(db: D1Database): Promise<void> {
 	await db.batch([
+		db.prepare("DELETE FROM session_photos"),
 		db.prepare("DELETE FROM sets"),
 		db.prepare("DELETE FROM session_exercises"),
 		db.prepare("DELETE FROM workout_sessions"),

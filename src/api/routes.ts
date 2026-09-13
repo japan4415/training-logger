@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 import type { Bindings } from "../env.js";
 import { getExercise, listExercises } from "./exercises.js";
+import { createPhoto, getPhoto, listPhotos, removePhoto } from "./photos.js";
 import { getSession, listSessions } from "./sessions.js";
 import { getExerciseStatsHandler } from "./stats.js";
 
@@ -18,6 +19,10 @@ export function registerApiRoutes(app: Hono<{ Bindings: Bindings }>): void {
 	// Sessions
 	app.get("/api/sessions", listSessions);
 	app.get("/api/sessions/:id", getSession);
+	app.get("/api/sessions/:id/photos", listPhotos);
+	app.get("/api/sessions/:id/photos/:photoId", getPhoto);
+	app.post("/api/sessions/:id/photos", createPhoto);
+	app.delete("/api/sessions/:id/photos/:photoId", removePhoto);
 
 	// Exercises  (stats route first — more specific path)
 	app.get("/api/exercises/:id/stats", getExerciseStatsHandler);

@@ -29,6 +29,16 @@ export interface WorkoutSessionRow {
 	updated_at: string;
 }
 
+/** セッションに紐づく写真メタデータ (session_photos テーブル) */
+export interface SessionPhotoRow {
+	id: string;
+	session_id: number;
+	r2_key: string;
+	content_type: "image/jpeg" | "image/png" | "image/webp";
+	size_bytes: number;
+	created_at: string;
+}
+
 /** セッション内種目実施 (session_exercises テーブル) */
 export interface SessionExerciseRow {
 	id: number;
