@@ -9,6 +9,8 @@
 | ランタイム | Cloudflare Workers | ステートレス、エッジ実行 |
 | フレームワーク | Hono v4.x | MCP / REST / SSR / 静的配信を単一 Worker で統合 |
 | データベース | Cloudflare D1 | エッジ SQLite。[無料枠](https://developers.cloudflare.com/d1/platform/pricing/): 5GB / 読み 500万行/日 / 書き 10万行/日 |
+| オブジェクトストレージ | Cloudflare R2 | `training-logger-photos` にセッション写真を保存。D1 はメタデータだけを保持 |
+| ブラウザ認証 | Cloudflare Access | custom domain のセッション画面と写真書き込み API を保護 |
 | 静的配信 | Workers Assets | `wrangler.jsonc` の `assets.directory` で設定。[2026年現在 Pages より Workers + Assets が Cloudflare 推奨](https://developers.cloudflare.com/workers/static-assets/) |
 | MCP SDK | `@modelcontextprotocol/sdk` v1.30.x (stable) | `McpServer` + `registerTool` + Zod でツール定義 |
 | MCP トランスポート | Streamable HTTP（ステートレス） | Hono ミドルウェアとして実装 |
@@ -46,23 +48,26 @@ graph TB
     end
 
     subgraph Cloudflare
+        Access["Cloudflare Access<br/>/sessions/* /api/*"]
         subgraph Worker["Cloudflare Worker: training-logger"]
             HonoApp["Hono App"]
             MCP["MCP Handler<br/>POST /mcp"]
-            REST["REST API<br/>GET /api/*"]
+            REST["REST API<br/>/api/*"]
             SSR["SSR<br/>Hono JSX"]
             Assets["Workers Assets<br/>/css/* /js/*"]
         end
 
         D1["D1: training-logger-db"]
+        R2["R2: training-logger-photos"]
     end
 
     ChatGPT -->|"Streamable HTTP"| MCP
     ClaudeAI -->|"Streamable HTTP"| MCP
     ClaudeDesktop -->|"Streamable HTTP"| MCP
 
-    Browser --> SSR
-    Browser --> REST
+    Browser --> Access
+    Access --> SSR
+    Access --> REST
 
     HonoApp --- MCP
     HonoApp --- REST
@@ -72,14 +77,22 @@ graph TB
     MCP --> D1
     REST --> D1
     SSR --> D1
+    MCP --> R2
+    REST --> R2
 ```
 
 単一の Cloudflare Worker 内で Hono が以下の 4 つの役割を統合する:
 
 - **MCP Handler**: `POST /mcp` で MCP クライアントからのリクエストを処理
-- **REST API**: `GET /api/*` で Web UI 向けのデータ取得エンドポイントを提供（読み取り専用）
+- **REST API**: `GET /api/*` で Web UI 向けデータを取得し、写真に限って認証済みの POST / DELETE を提供
 - **SSR**: Hono JSX でサーバサイドレンダリング。`/` をルートとしてページを配信
 - **Workers Assets**: `public/` ディレクトリの静的ファイルをサイトルートで配信（例: `/css/style.css`, `/js/chart-init.js`）
+
+### Cloudflare Access の保護範囲
+
+custom domain では `/sessions/*` と `/api/*` を Cloudflare Access の Allow ポリシーで保護する。`/mcp` は ChatGPT / Claude の認証なしコネクタから到達できるよう Bypass とし、配布物を直接取得させる場合だけ `/skills/*` も Bypass の候補とする。アプリケーション内でも写真の POST / DELETE は Access JWT と Fetch Metadata を検証するが、`/mcp` 自体は認証しない。
+
+Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` の `workers_dev: true` を残すと `*.workers.dev` 側から Access を迂回できるため、本番では `false` にするか、同等の保護を追加する。画像取得 URL を含め、公開経路が custom domain だけになっていることを確認する。
 
 ## リクエストフロー
 
@@ -138,11 +151,14 @@ training-logger/
 │   └── roadmap.md               # フェーズ計画・将来構想
 ├── src/
 │   ├── index.ts                 # Hono app エントリポイント、ルーティング統合
-│   ├── env.ts                   # Bindings 型定義 (DB)
+│   ├── env.ts                   # Bindings 型定義 (D1 / R2 / Access)
+│   ├── security/
+│   │   └── access-auth.ts       # Access JWT 検証と CSRF 防止
 │   ├── db/                      # データアクセス層
 │   │   ├── types.ts             # テーブル定義の TypeScript 型
 │   │   ├── exercises.ts         # 種目の CRUD・別名解決
 │   │   ├── sessions.ts          # セッションの CRUD
+│   │   ├── session-photos.ts    # 写真メタデータ、R2 保存・補償削除
 │   │   ├── records.ts           # セット記録の CRUD
 │   │   └── queries.ts           # 集計・検索クエリ
 │   ├── mcp/
@@ -151,10 +167,12 @@ training-logger/
 │   │   └── tools/               # 各 MCP ツールの実装
 │   │       ├── exercises.ts     # search_exercises, register_exercise
 │   │       ├── workouts.ts      # log_workout, update_workout, delete_workout
+│   │       ├── photos.ts        # 写真リンク発行・base64 アップロード
 │   │       └── history.ts       # get_history
-│   ├── api/                     # REST API (Web UI 向け、読み取り専用)
+│   ├── api/                     # REST API (Web UI 向け)
 │   │   ├── routes.ts            # API ルーティング
 │   │   ├── sessions.ts          # セッション一覧・詳細
+│   │   ├── photos.ts            # 写真一覧・本体配信・追加・削除
 │   │   ├── exercises.ts         # 種目一覧
 │   │   └── stats.ts             # 統計・集計
 │   └── views/                   # SSR (Hono JSX)
@@ -168,7 +186,8 @@ training-logger/
 │   ├── css/
 │   │   └── style.css
 │   ├── js/
-│   │   └── chart-init.js
+│   │   ├── chart-init.js
+│   │   └── session-photos.js    # 写真アップロード・削除 UI
 │   └── skills/                  # Skill 配布物
 ├── skills/
 │   └── log-workout/
@@ -177,6 +196,9 @@ training-logger/
 │   └── build-skill.mjs          # 配布物生成
 ├── migrations/                  # D1 マイグレーション
 │   ├── 0001_initial_schema.sql
+│   ├── 0002_atlas_muscles.sql
+│   ├── 0003_atlas_trunk_muscles.sql
+│   ├── 0004_session_photos.sql
 │   └── README.md
 ├── test/                        # Vitest テスト
 │   ├── db/                      # データアクセス層のテスト
@@ -201,7 +223,9 @@ training-logger/
 
 **`src/mcp/`** - MCP サーバの実装。各ツールは薄く保ち、入力バリデーション（Zod）とレスポンス整形のみを担当する。ビジネスロジックは `db/` に委譲する。
 
-**`src/api/`** - Web UI 向けの REST API。読み取り専用。純粋な JSON API として実装する。htmx の部分更新は SSR ルート（`src/views/`）自身が `HX-Request` ヘッダーを検出して処理する。
+**`src/api/`** - Web UI 向けの REST API。ワークアウトデータは読み取り専用で、セッション写真だけ追加・削除を扱う。htmx の部分更新は SSR ルート（`src/views/`）自身が `HX-Request` ヘッダーを検出して処理する。
+
+**`src/security/`** - ブラウザ書き込み用の Cloudflare Access JWT 検証と Fetch Metadata による CSRF 防止を担う。MCP の認証境界とは分離する。
 
 **`src/views/`** - Hono JSX によるサーバサイドレンダリング。htmx 属性を埋め込んだ HTML を生成する。
 

@@ -4,13 +4,14 @@ training-logger のデータベース設計について記述する。DBMS は C
 
 ## 設計方針
 
-ユーザー方針「筋トレの種類テーブル + 筋トレ内容テーブル」を核に、以下の 5 テーブルへ正規化する。
+ユーザー方針「筋トレの種類テーブル + 筋トレ内容テーブル」を核に、以下の 6 テーブルへ正規化する。画像本体は D1 に格納せず、Cloudflare R2 に保存する。
 
 - **`exercises`** -- 種目マスタ。種目の正規名・カテゴリ・器具・対象部位を保持
 - **`exercise_aliases`** -- 種目の別名（表記揺れ対策）
 - **`workout_sessions`** -- ワークアウトセッション。1 日 1 行で日付・目的・体調メモを管理
 - **`session_exercises`** -- セッション内の種目実施。順序付きで、同一種目の同日複数回出現に対応
 - **`sets`** -- セット単位の計測値。筋力系・有酸素系・柔軟系のパラメータを NULL 許容カラムで持つ
+- **`session_photos`** -- セッションに紐づく写真のメタデータ。画像本体の R2 キー・形式・サイズを保持
 
 ### 単位の扱い
 
@@ -45,6 +46,7 @@ erDiagram
     exercises ||--o{ exercise_aliases : "has aliases"
     exercises ||--o{ session_exercises : "performed in"
     workout_sessions ||--o{ session_exercises : "contains"
+    workout_sessions ||--o{ session_photos : "has photos"
     session_exercises ||--o{ sets : "measured by"
 
     exercises {
@@ -104,6 +106,15 @@ erDiagram
         TEXT notes
         TEXT created_at
     }
+
+    session_photos {
+        TEXT id PK
+        INTEGER session_id FK
+        TEXT r2_key "NOT NULL UNIQUE"
+        TEXT content_type "NOT NULL"
+        INTEGER size_bytes "NOT NULL CHECK >= 0"
+        TEXT created_at "NOT NULL"
+    }
 ```
 
 ## テーブル定義
@@ -155,6 +166,27 @@ erDiagram
 インデックス:
 
 - `idx_workout_sessions_date` -- `session_date` で範囲検索・ソート
+
+### session_photos (セッション写真)
+
+ワークアウト登録に使ったノート写真のメタデータを管理する。画像本体は R2 バケット `training-logger-photos` に保存し、D1 には参照に必要な情報だけを保持する。1 セッションにつき最大 4 枚、1 枚につき最大 10 MiB というアプリケーション制約がある。
+
+| カラム | 型 | 制約 | 説明 |
+|---|---|---|---|
+| `id` | TEXT | PRIMARY KEY | 写真 ID。`crypto.randomUUID()` で生成 |
+| `session_id` | INTEGER | NOT NULL, FK -> workout_sessions(id) ON DELETE CASCADE | 親セッション ID |
+| `r2_key` | TEXT | NOT NULL UNIQUE | R2 オブジェクトキー |
+| `content_type` | TEXT | NOT NULL | magic bytes から判定した MIME type（`image/jpeg` / `image/png` / `image/webp`） |
+| `size_bytes` | INTEGER | NOT NULL, CHECK(size_bytes >= 0) | 画像本体のバイト数 |
+| `created_at` | TEXT | NOT NULL DEFAULT (UTC) | 作成日時 ISO 8601 UTC |
+
+インデックス:
+
+- `idx_session_photos_session_id` -- `session_id` でセッション内の写真を取得
+
+R2 キーは `sessions/{YYYY-MM-DD}/{uuid}.{ext}` 形式で、`YYYY-MM-DD` は親セッションの `session_date`、拡張子は検出した形式に応じてサーバが `jpg` / `png` / `webp` から決める。例えば `sessions/2026-08-16/550e8400-e29b-41d4-a716-446655440000.jpg` に対応する D1 行の `r2_key` には同じ文字列を保存する。R2 put 時の HTTP metadata は、検出した `contentType` と `cacheControl: "private, no-store"` である。
+
+枚数上限は、件数確認と INSERT を分離せず、`INSERT ... SELECT ... WHERE (SELECT COUNT(*) ...) < 4` の単一 SQL 文で強制する。保存順序は R2 put、D1 INSERT の順であり、上限超過または INSERT 失敗時には直前に作成した R2 オブジェクトを補償削除する。
 
 ### session_exercises (セッション内種目実施)
 
@@ -222,7 +254,7 @@ erDiagram
 
 ## DDL (マイグレーションファイル)
 
-以下の SQL を `migrations/0001_initial_schema.sql` として配置する。
+初期 5 テーブルの SQL は `migrations/0001_initial_schema.sql` に配置する。
 
 ```sql
 -- 種目マスタ
@@ -302,6 +334,25 @@ CREATE TABLE sets (
 CREATE INDEX idx_sets_session_exercise ON sets(session_exercise_id);
 ```
 
+### セッション写真マイグレーション
+
+`migrations/0004_session_photos.sql` は `session_photos` テーブルと `idx_session_photos_session_id` を追加する。
+
+```sql
+CREATE TABLE session_photos (
+    id TEXT PRIMARY KEY,
+    session_id INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    r2_key TEXT NOT NULL UNIQUE,
+    content_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
+CREATE INDEX idx_session_photos_session_id ON session_photos(session_id);
+```
+
+`ON DELETE CASCADE` が削除するのは D1 の `session_photos` 行だけで、R2 オブジェクトは削除しない。このため `deleteSession` は D1 のセッションを DELETE する前に写真の `r2_key` を列挙し、R2 をアプリケーション側で補償削除する。R2 削除に失敗した場合は `console.error` に記録して D1 DELETE を続行するため、運用時はログを監視し、残存オブジェクトを必要に応じて除去する。
+
 ## 計画 vs 実績
 
 セットレベルで計画と実績を区別する。
@@ -366,8 +417,9 @@ Cloudflare D1 のマイグレーションは `wrangler d1 migrations` コマン�
 ```
 migrations/
   0001_initial_schema.sql
-  0002_add_xxx.sql
-  ...
+  0002_atlas_muscles.sql
+  0003_atlas_trunk_muscles.sql
+  0004_session_photos.sql
 ```
 
 ### コマンド
