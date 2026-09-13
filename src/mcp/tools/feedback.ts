@@ -42,6 +42,35 @@ export type CreateFeedbackResult =
 const DEFAULT_REPO_OWNER = "japan4415";
 const DEFAULT_REPO_NAME = "training-logger";
 
+// ---- Helpers ----
+
+async function extractErrorMessage(res: Response): Promise<string> {
+	let text = "";
+	try {
+		text = await res.text();
+	} catch {
+		return res.statusText;
+	}
+
+	if (!text) {
+		return res.statusText;
+	}
+
+	try {
+		const json = JSON.parse(text) as { message?: string };
+		return json.message || text;
+	} catch {
+		return text;
+	}
+}
+
+interface GitHubIssueItem {
+	number: number;
+	html_url: string;
+	title: string;
+	pull_request?: unknown;
+}
+
 export async function createFeedbackHandler(
 	env: Bindings,
 	params: CreateFeedbackParams,
@@ -73,45 +102,46 @@ export async function createFeedbackHandler(
 	};
 
 	try {
-		// 1. Check open issues for duplicate title
-		const listUrl = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=100`;
-		const listRes = await fetchFn(listUrl, {
-			method: "GET",
-			headers: commonHeaders,
-		});
+		// 1. Check open issues for duplicate title (paginating up to 10 pages, ignoring PRs)
+		const MAX_PAGES = 10;
+		const PER_PAGE = 100;
 
-		if (!listRes.ok) {
-			let githubMessage = "";
-			try {
-				const errJson = (await listRes.json()) as { message?: string };
-				githubMessage = errJson.message || listRes.statusText;
-			} catch {
-				githubMessage = await listRes.text().catch(() => listRes.statusText);
+		for (let page = 1; page <= MAX_PAGES; page++) {
+			const listUrl = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=${PER_PAGE}&page=${page}`;
+			const listRes = await fetchFn(listUrl, {
+				method: "GET",
+				headers: commonHeaders,
+			});
+
+			if (!listRes.ok) {
+				const githubMessage = await extractErrorMessage(listRes);
+				return {
+					isError: true,
+					status: listRes.status,
+					message: githubMessage,
+					error: `GitHub API エラー (${listRes.status}): ${githubMessage}`,
+				};
 			}
-			return {
-				isError: true,
-				status: listRes.status,
-				message: githubMessage,
-				error: `GitHub API エラー (${listRes.status}): ${githubMessage}`,
-			};
-		}
 
-		const openIssues = (await listRes.json()) as Array<{
-			number: number;
-			html_url: string;
-			title: string;
-		}>;
+			const issues = (await listRes.json()) as GitHubIssueItem[];
 
-		const duplicate = openIssues.find(
-			(issue) => issue.title.trim() === trimmedTitle,
-		);
-		if (duplicate) {
-			return {
-				duplicate: true,
-				issue_number: duplicate.number,
-				html_url: duplicate.html_url,
-				title: duplicate.title,
-			};
+			for (const issue of issues) {
+				if (issue.pull_request !== undefined) {
+					continue;
+				}
+				if (issue.title.trim() === trimmedTitle) {
+					return {
+						duplicate: true,
+						issue_number: issue.number,
+						html_url: issue.html_url,
+						title: issue.title,
+					};
+				}
+			}
+
+			if (issues.length < PER_PAGE) {
+				break;
+			}
 		}
 
 		// 2. Create new issue via POST
@@ -150,13 +180,7 @@ export async function createFeedbackHandler(
 			};
 		}
 
-		let githubMessage = "";
-		try {
-			const errJson = (await postRes.json()) as { message?: string };
-			githubMessage = errJson.message || postRes.statusText;
-		} catch {
-			githubMessage = await postRes.text().catch(() => postRes.statusText);
-		}
+		const githubMessage = await extractErrorMessage(postRes);
 		return {
 			isError: true,
 			status: postRes.status,
