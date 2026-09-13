@@ -59,13 +59,23 @@ wrangler d1 create training-logger-db
 wrangler d1 migrations apply training-logger-db --remote
 ```
 
-### 3. デプロイ
+### 3. GitHub トークンの設定（MCP create_feedback 用）
+
+MCP 経由の Issue 起票（`create_feedback`）を利用するため、GitHub の Fine-grained Personal Access Token（権限: `Issues: Read and write`）を発行し、Wrangler secret として登録する。
+
+```bash
+wrangler secret put GITHUB_TOKEN
+```
+
+※ 登録先リポジトリを変更したい場合は、環境変数 `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` を指定する（未設定時は既定値 `japan4415` / `training-logger`）。
+
+### 4. デプロイ
 
 ```bash
 wrangler deploy
 ```
 
-### 4. 疎通確認
+### 5. 疎通確認
 
 以下を確認する:
 
@@ -77,8 +87,8 @@ wrangler deploy
 
 本番環境（production）のみ運用する。個人利用のため preview 環境を設ける利益が薄い。
 
-- **本番**: `wrangler deploy` でデプロイ。D1 は `training-logger-db`（リモート）
-- **ローカル開発**: `wrangler dev` で起動。D1 はローカルに自動作成される。マイグレーション適用は `wrangler d1 migrations apply training-logger-db --local`
+- **本番**: `wrangler deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `wrangler secret put` で設定
+- **ローカル開発**: `wrangler dev` で起動。D1 はローカルに自動作成される。マイグレーション適用は `wrangler d1 migrations apply training-logger-db --local`。シークレットや環境変数は `.dev.vars`（`.dev.vars.example` 参照）に設定する
 
 ## CI/CD
 
