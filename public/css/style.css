@@ -629,6 +629,10 @@ a.exercise-card:active {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
 	gap: 6px;
+	min-inline-size: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
 }
 
 .photo-delete-confirmation[hidden] {
@@ -685,6 +689,25 @@ a.exercise-card:active {
 	margin-top: 16px;
 	padding-top: 16px;
 	border-top: 1px solid var(--separator);
+}
+
+.photo-upload-limit {
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--separator);
+	color: var(--label-secondary);
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+@media (max-width: 400px) {
+	.photo-delete-confirmation {
+		grid-template-columns: 1fr;
+	}
+
+	.photo-delete-question {
+		grid-column: 1;
+	}
 }
 
 .session-photo-grid + .photo-upload-form {

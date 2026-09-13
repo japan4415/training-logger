@@ -166,9 +166,10 @@ async function seedTestData(db: D1Database): Promise<void> {
 	]);
 }
 
-async function seedSessionPhotos(sessionId: number): Promise<void> {
+async function seedSessionPhotos(sessionId: number, count = 2): Promise<void> {
 	const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
-	for (const [index, id] of ["photo-1", "photo-2"].entries()) {
+	for (let index = 0; index < count; index++) {
+		const id = `photo-${index + 1}`;
 		const r2Key = `sessions/2026-08-15/${id}.png`;
 		await env.PHOTOS.put(r2Key, bytes, {
 			httpMetadata: {
@@ -292,6 +293,7 @@ describe("Session views", () => {
 			);
 			expect(html).not.toContain("<img");
 			expect(html).toContain('href="/sessions/1/photos">写真を表示</a>');
+			expect(html).toContain('hx-trigger="toggle once from:closest details"');
 		});
 
 		it("shows the photo count in the session detail summary", async () => {
@@ -312,9 +314,26 @@ describe("Session views", () => {
 			expect(html).not.toContain("<html");
 			expect(html.match(/<img/g)).toHaveLength(2);
 			expect(html).toContain('loading="lazy"');
+			expect(html).toContain('alt="セッション写真 1 / 2"');
+			expect(html).toContain('aria-expanded="false"');
+			expect(html).toContain('<fieldset id="photo-delete-confirm-photo-1"');
 			expect(html).toContain('class="photo-upload-form"');
 			expect(html).toContain(
 				'accept="image/jpeg,image/png,image/webp" multiple',
+			);
+		});
+
+		it("replaces upload controls with guidance at the four-photo limit", async () => {
+			await seedSessionPhotos(1, 4);
+			const html = await (
+				await request("/sessions/1/photos", {
+					headers: { "HX-Request": "true" },
+				})
+			).text();
+			expect(html.match(/<img/g)).toHaveLength(4);
+			expect(html).not.toContain('class="photo-upload-form"');
+			expect(html).toContain(
+				"4枚まで追加済みです。追加するには削除してください。",
 			);
 		});
 

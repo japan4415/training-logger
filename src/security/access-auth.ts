@@ -116,13 +116,17 @@ export async function requireAccessUser(
 	fetchFn: FetchFn = fetch,
 ): Promise<AccessAuthResult> {
 	const fetchSite = c.req.header("Sec-Fetch-Site")?.toLowerCase();
-	if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
+	if (!fetchSite || (fetchSite !== "same-origin" && fetchSite !== "none")) {
 		return { ok: false, response: c.json({ error: "csrf_forbidden" }, 403) };
 	}
 
 	const { ACCESS_TEAM_DOMAIN: domain, ACCESS_AUD: audience } = c.env;
 	if (!domain || !audience) {
-		if (c.env.PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED === "1") {
+		const hostname = new URL(c.req.url).hostname.toLowerCase();
+		if (
+			c.env.PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED === "1" &&
+			(hostname === "localhost" || hostname === "127.0.0.1")
+		) {
 			return { ok: true, user: null };
 		}
 		return {

@@ -5,6 +5,7 @@ import { requireAccessUser } from "../../src/security/access-auth.js";
 
 const DOMAIN = "team.cloudflareaccess.com";
 const AUDIENCE = "test-audience";
+const SAME_ORIGIN = { "Sec-Fetch-Site": "same-origin" };
 let keys: CryptoKeyPair;
 let publicJwk: JsonWebKey;
 
@@ -83,7 +84,10 @@ describe("Cloudflare Access authentication", () => {
 		});
 		const response = await appFor(fetchFn).request(
 			"/write",
-			{ method: "POST", headers: { "Cf-Access-Jwt-Assertion": token } },
+			{
+				method: "POST",
+				headers: { ...SAME_ORIGIN, "Cf-Access-Jwt-Assertion": token },
+			},
 			bindings(),
 		);
 		expect(response.status).toBe(200);
@@ -104,7 +108,10 @@ describe("Cloudflare Access authentication", () => {
 			"/write",
 			{
 				method: "POST",
-				headers: { "Cf-Access-Jwt-Assertion": await jwt(payload) },
+				headers: {
+					...SAME_ORIGIN,
+					"Cf-Access-Jwt-Assertion": await jwt(payload),
+				},
 			},
 			bindings(),
 		);
@@ -122,7 +129,10 @@ describe("Cloudflare Access authentication", () => {
 			"/write",
 			{
 				method: "POST",
-				headers: { "Cf-Access-Jwt-Assertion": parts.join(".") },
+				headers: {
+					...SAME_ORIGIN,
+					"Cf-Access-Jwt-Assertion": parts.join("."),
+				},
 			},
 			bindings(),
 		);
@@ -133,10 +143,52 @@ describe("Cloudflare Access authentication", () => {
 		const fetchFn = jwksFetch();
 		const response = await appFor(fetchFn).request(
 			"/write",
-			{ method: "POST" },
+			{ method: "POST", headers: SAME_ORIGIN },
 			bindings(),
 		);
 		expect(response.status).toBe(401);
 		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
+	it("rejects writes when Sec-Fetch-Site is missing", async () => {
+		const response = await appFor(jwksFetch()).request(
+			"/write",
+			{ method: "POST" },
+			bindings(),
+		);
+		expect(response.status).toBe(403);
+		expect((await response.json()).error).toBe("csrf_forbidden");
+	});
+
+	it.each(["http://localhost:8787/write", "http://127.0.0.1:8787/write"])(
+		"allows the local unauthenticated flag for %s",
+		async (url) => {
+			const response = await appFor(jwksFetch()).request(
+				url,
+				{ method: "POST", headers: SAME_ORIGIN },
+				{
+					...bindings(),
+					ACCESS_TEAM_DOMAIN: undefined,
+					ACCESS_AUD: undefined,
+					PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1",
+				},
+			);
+			expect(response.status).toBe(200);
+		},
+	);
+
+	it("ignores the local unauthenticated flag on a non-local host", async () => {
+		const response = await appFor(jwksFetch()).request(
+			"https://training-logger.discord.jp/write",
+			{ method: "POST", headers: SAME_ORIGIN },
+			{
+				...bindings(),
+				ACCESS_TEAM_DOMAIN: undefined,
+				ACCESS_AUD: undefined,
+				PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1",
+			},
+		);
+		expect(response.status).toBe(401);
+		expect((await response.json()).error).toBe("access_not_configured");
 	});
 });

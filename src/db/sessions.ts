@@ -152,29 +152,17 @@ export async function updateSession(
 
 /**
  * Delete a session by ID. Returns true if a row was deleted.
- * CASCADE deletes session_exercises and sets.
+ * Deletes R2 photos first, then CASCADE deletes photo rows, session exercises,
+ * and sets. If an R2 deletion fails, the D1 session remains for safe retry.
  */
 export async function deleteSession(
-	dbOrEnv: D1Database | Pick<Bindings, "DB" | "PHOTOS">,
+	env: Pick<Bindings, "DB" | "PHOTOS">,
 	id: number,
 ): Promise<boolean> {
-	let env: Pick<Bindings, "DB" | "PHOTOS"> | null = null;
-	let db: D1Database;
-	if ("DB" in dbOrEnv) {
-		env = dbOrEnv;
-		db = dbOrEnv.DB;
-	} else {
-		db = dbOrEnv;
-	}
-	if (env) {
-		try {
-			await deleteSessionPhotosForSession(env, id);
-		} catch (error) {
-			console.error("Failed to delete session photos from R2", error);
-		}
-	}
-	const result = await db
-		.prepare("DELETE FROM workout_sessions WHERE id = ?")
+	await deleteSessionPhotosForSession(env, id);
+	const result = await env.DB.prepare(
+		"DELETE FROM workout_sessions WHERE id = ?",
+	)
 		.bind(id)
 		.run();
 	return result.meta.changes > 0;

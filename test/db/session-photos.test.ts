@@ -95,6 +95,35 @@ describe("session photos DB service", () => {
 		).toHaveLength(4);
 	});
 
+	it("compensates the R2 put when the D1 insert fails", async () => {
+		const { session } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const failingDb = {
+			prepare(query: string) {
+				if (query.includes("INSERT INTO session_photos")) {
+					return {
+						bind() {
+							return {
+								run() {
+									throw new Error("injected D1 insert failure");
+								},
+							};
+						},
+					};
+				}
+				return env.DB.prepare(query);
+			},
+		} as unknown as D1Database;
+
+		await expect(
+			storeSessionPhoto({ ...env, DB: failingDb }, session, IMAGES.jpeg),
+		).rejects.toThrow("injected D1 insert failure");
+		expect(
+			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+		).toHaveLength(0);
+	});
+
 	it("deletes one photo from D1 and R2", async () => {
 		const { session } = await getOrCreateSession(env.DB, {
 			sessionDate: "2026-09-14",
@@ -116,5 +145,30 @@ describe("session photos DB service", () => {
 		if (!stored.ok) throw new Error(stored.error);
 		expect(await deleteSession(env, session.id)).toBe(true);
 		expect(await env.PHOTOS.get(stored.photo.r2_key)).toBeNull();
+		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(0);
+	});
+
+	it("keeps the session and photo row when R2 deletion fails", async () => {
+		const { session } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const stored = await storeSessionPhoto(env, session, IMAGES.jpeg);
+		if (!stored.ok) throw new Error(stored.error);
+		const failingPhotos = {
+			delete() {
+				throw new Error("injected R2 delete failure");
+			},
+		} as unknown as R2Bucket;
+
+		await expect(
+			deleteSession({ ...env, PHOTOS: failingPhotos }, session.id),
+		).rejects.toThrow("injected R2 delete failure");
+		expect(
+			await env.DB.prepare("SELECT id FROM workout_sessions WHERE id = ?")
+				.bind(session.id)
+				.first(),
+		).not.toBeNull();
+		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
+		expect(await env.PHOTOS.get(stored.photo.r2_key)).not.toBeNull();
 	});
 });
