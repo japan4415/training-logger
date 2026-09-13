@@ -48,7 +48,7 @@
 		return "処理に失敗しました。時間をおいて再度お試しください。";
 	}
 
-	async function reloadFragment(source, message) {
+	async function reloadFragment(source, message, isError = false) {
 		const content = source.closest(".session-photos-content");
 		const target = source.closest("#session-photos-target");
 		const fragmentUrl = content?.dataset.fragmentUrl;
@@ -71,7 +71,21 @@
 		if (summary && refreshed?.dataset.photoCount) {
 			summary.textContent = `写真 (${refreshed.dataset.photoCount})`;
 		}
-		if (refreshed) setStatus(refreshed, message);
+		if (refreshed) setStatus(refreshed, message, isError);
+	}
+
+	function openPhotosFromHash() {
+		if (location.hash !== "#photos") return;
+		const details = document.querySelector("details.session-photos#photos");
+		if (details) details.open = true;
+	}
+
+	if (document.readyState === "loading") {
+		document.addEventListener("DOMContentLoaded", openPhotosFromHash, {
+			once: true,
+		});
+	} else {
+		openPhotosFromHash();
 	}
 
 	document.addEventListener("submit", async (event) => {
@@ -101,8 +115,11 @@
 
 		input.disabled = true;
 		submit.disabled = true;
+		let successfulCount = 0;
+		let activeFile = files[0];
 		try {
 			for (let index = 0; index < files.length; index += 1) {
+				activeFile = files[index];
 				setStatus(form, `${index + 1} / ${files.length} 枚をアップロード中…`);
 				const body = new FormData();
 				body.append("photo", files[index]);
@@ -112,13 +129,41 @@
 					credentials: "same-origin",
 				});
 				if (!response.ok) {
-					setStatus(form, await responseError(response), true);
+					const detail = await responseError(response);
+					const message = `${successfulCount}件成功、${index + 1}件目（${activeFile.name}）のアップロードに失敗しました。${detail}`;
+					input.value = "";
+					if (successfulCount > 0) {
+						await reloadFragment(form, message, true);
+					} else {
+						setStatus(form, message, true);
+					}
 					return;
 				}
+				successfulCount += 1;
 			}
+			input.value = "";
 			await reloadFragment(form, `${files.length}枚の写真を追加しました。`);
 		} catch (_error) {
-			setStatus(form, "通信に失敗しました。接続を確認して再度お試しください。", true);
+			const message =
+				successfulCount === files.length
+					? `${successfulCount}件のアップロードは成功しましたが、一覧を更新できませんでした。ページを再読み込みしてください。`
+					: `${successfulCount}件成功、${successfulCount + 1}件目（${activeFile.name}）のアップロードに失敗しました。通信を確認して再度お試しください。`;
+			input.value = "";
+			if (successfulCount > 0) {
+				try {
+					await reloadFragment(
+						form,
+						successfulCount === files.length
+							? `${successfulCount}枚の写真を追加しました。`
+							: message,
+						successfulCount !== files.length,
+					);
+				} catch (_reloadError) {
+					setStatus(form, message, true);
+				}
+			} else {
+				setStatus(form, message, true);
+			}
 		} finally {
 			input.disabled = false;
 			submit.disabled = false;
@@ -133,6 +178,7 @@
 			);
 			if (!confirmation) return;
 			start.hidden = true;
+			start.setAttribute("aria-expanded", "true");
 			confirmation.hidden = false;
 			confirmation.querySelector(".photo-delete-confirm")?.focus();
 			return;
@@ -140,6 +186,7 @@
 
 		const cancel = event.target.closest?.(".photo-delete-cancel");
 		if (cancel) {
+			if (cancel.disabled) return;
 			const confirmation = cancel.closest(".photo-delete-confirmation");
 			const deleteStart = confirmation
 				?.closest(".session-photo-actions")
@@ -147,6 +194,7 @@
 			confirmation.hidden = true;
 			if (deleteStart) {
 				deleteStart.hidden = false;
+				deleteStart.setAttribute("aria-expanded", "false");
 				deleteStart.focus();
 			}
 			return;
@@ -154,7 +202,11 @@
 
 		const confirm = event.target.closest?.(".photo-delete-confirm");
 		if (!confirm) return;
-		confirm.disabled = true;
+		const confirmation = confirm.closest(".photo-delete-confirmation");
+		const question = confirmation?.querySelector(".photo-delete-question");
+		const controls = confirmation?.querySelectorAll("button") || [];
+		for (const control of controls) control.disabled = true;
+		if (question) question.textContent = "削除中…";
 		setStatus(confirm, "写真を削除中…");
 		try {
 			const response = await fetch(confirm.dataset.deleteUrl, {
@@ -163,13 +215,15 @@
 			});
 			if (!response.ok) {
 				setStatus(confirm, await responseError(response), true);
-				confirm.disabled = false;
+				for (const control of controls) control.disabled = false;
+				if (question) question.textContent = "削除しますか？";
 				return;
 			}
 			await reloadFragment(confirm, "写真を削除しました。");
 		} catch (_error) {
 			setStatus(confirm, "通信に失敗しました。接続を確認して再度お試しください。", true);
-			confirm.disabled = false;
+			for (const control of controls) control.disabled = false;
+			if (question) question.textContent = "削除しますか？";
 		}
 	});
 })();

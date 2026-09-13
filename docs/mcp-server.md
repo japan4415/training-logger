@@ -29,7 +29,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 ## ツール定義
 
-本サーバは 11 のツールを提供する（記録系 6 + セッション写真 2 + Atlas 筋肉管理 2 + 機能リクエスト 1）。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
+本サーバは 10 のツールを提供する（記録系 6 + セッション写真 1 + Atlas 筋肉管理 2 + 機能リクエスト 1）。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
 
 ### search_exercises
 
@@ -507,63 +507,6 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 - 指定日のセッションがない場合は `isError: true` と「先に `log_workout` で登録してください」を返す
 - `date` の形式が不正な場合は MCP の入力バリデーションエラーを返す
 
-### upload_session_photo
-
-Claude Code など、ローカルファイルを読み取って base64 化できるクライアント向けの直接アップロード補助ツール。
-
-**説明文** (LLM 向け):
-
-> Claude Code などローカルファイルを読める環境向けの補助です。10 MiB 以下の JPEG / PNG / WebP をワークアウト記録に保存します。
-
-**入力スキーマ**:
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "date": {
-      "type": "string",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-      "description": "セッション日付 (YYYY-MM-DD)"
-    },
-    "content_type": {
-      "type": "string",
-      "enum": ["image/jpeg", "image/png", "image/webp"],
-      "description": "画像の MIME type"
-    },
-    "data_base64": {
-      "type": "string",
-      "description": "画像本体の base64"
-    }
-  },
-  "required": ["date", "content_type", "data_base64"]
-}
-```
-
-**挙動**:
-
-1. `date` で登録済みセッションを検索する
-2. RFC 4648 base64 を厳密にデコードし、空白、不正文字、誤った padding を拒否する
-3. `content_type` の申告値ではなく画像の magic bytes から JPEG / PNG / WebP を判定し、10 MiB と 1 セッション 4 枚の上限を検証する
-4. R2 に画像本体、D1 にメタデータを保存し、`photo_id`、検出した `content_type`、`size_bytes`、画像 URL を返す
-
-```json
-{
-  "photo_id": "550e8400-e29b-41d4-a716-446655440000",
-  "content_type": "image/jpeg",
-  "size_bytes": 245760,
-  "url": "https://training-logger.discord.jp/api/sessions/42/photos/550e8400-e29b-41d4-a716-446655440000"
-}
-```
-
-**エラー応答**:
-
-- 指定日のセッションがない場合: `isError: true` と「先に `log_workout` で登録してください」
-- base64 が不正な場合: `isError: true`, `data_base64 が不正です。`
-- magic bytes が未対応の場合: `isError: true`, `unsupported_type`
-- 10 MiB を超える場合: `isError: true`, `too_large`
-- 既に 4 枚ある場合: `isError: true`, `limit_exceeded`
-
 ### create_feedback
 
 training-logger への機能要望・不具合報告・種目追加要望を GitHub issue として起票。
@@ -616,7 +559,7 @@ training-logger への機能要望・不具合報告・種目追加要望を Git
 
 ### ツール設計と責務の分離
 
-LLM のツール選択精度はツール数が増加するほど低下する。そのため本サーバではツールを必要最小限の 11 ツール（記録系 6 + セッション写真 2 + Atlas 筋肉管理 2 + 機能リクエスト 1）に整理している。日常的な筋トレ記録の CRUD（検索・登録・記録・更新・削除・照会）、登録後の写真保存、Atlas 筋肉割当、およびスキーマで表現できない要望の issue 起票に絞り、明確な責務分離を行っている。
+LLM のツール選択精度はツール数が増加するほど低下する。そのため本サーバではツールを必要最小限の 10 ツール（記録系 6 + セッション写真 1 + Atlas 筋肉管理 2 + 機能リクエスト 1）に整理している。日常的な筋トレ記録の CRUD（検索・登録・記録・更新・削除・照会）、登録後の写真アップロード画面の案内、Atlas 筋肉割当、およびスキーマで表現できない要望の issue 起票に絞り、明確な責務分離を行っている。
 
 ### 説明文の書き方
 
@@ -652,17 +595,17 @@ MCP エンドポイント URL:
 https://training-logger.discord.jp/mcp
 ```
 
-カスタムドメインを設定済み。MCP の標準ツール引数には、チャットへ添付された画像本体をそのまま渡す共通経路がない。そのため ChatGPT、claude.ai、Claude Desktop では、記録後に `create_photo_upload_link` が返す URL をブラウザで開いてアップロードする。Claude Code のようにローカルファイルを読める環境だけは、補助ツール `upload_session_photo` に base64 を渡して直接保存できる。
+カスタムドメインを設定済み。写真を保存する場合は、どの MCP クライアントでも記録後に `create_photo_upload_link` が返す URL をブラウザで開いてアップロードする。画像本体は MCP 経由では送信しない。
 
 `POST /mcp` は JSON-RPC とツール結果だけを扱い、保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。
 
 ### セキュリティ境界
 
-`/mcp` は現在認証なしで公開している。したがって `upload_session_photo` は接続できる誰でも呼び出せる。画像は 1 枚 10 MiB、1 セッション 4 枚に制限されるが、`log_workout` でセッション自体も無認証で作成できるため、これらの上限だけを認可対策と見なしてはいけない。
+`/mcp` は現在認証なしで公開しているが、写真本体を書き込むツールは提供しない。写真の保存は Access 保護下のブラウザ用 REST API だけで行う。
 
 一方、ブラウザ経由の `POST /api/sessions/:id/photos` と `DELETE /api/sessions/:id/photos/:photoId` は `requireAccessUser` による Fetch Metadata の CSRF 検査と Cloudflare Access JWT 検証で保護する。Zero Trust では custom domain の `/mcp` だけを Bypass とし、`/sessions/*` と `/api/*` は Allow ポリシー配下に置く。Skill の公開配布 URL が必要な場合は `/skills/*` も限定的に Bypass できる。
 
-現在の `wrangler.jsonc` は `workers_dev: true` であるため、`*.workers.dev` URL が Access を迂回する可能性がある。本番では `workers_dev: false` にするか、同等の認証ポリシーで `workers.dev` 側も保護することを推奨する。設定方法は [deployment.md](./deployment.md) を参照。
+`wrangler.jsonc` は `workers_dev: false` に設定済みであり、`*.workers.dev` URL は無効である。公開経路は Access を設定した custom domain のみとする。設定方法は [deployment.md](./deployment.md) を参照。
 
 ### ChatGPT
 
@@ -866,7 +809,7 @@ https://training-logger.discord.jp/mcp
 **ユーザー**:
 > お願いします
 
-ChatGPT、claude.ai、Claude Desktop などでは `create_photo_upload_link` を呼び出す。
+`create_photo_upload_link` を呼び出す。
 
 ```json
 {
@@ -877,7 +820,7 @@ ChatGPT、claude.ai、Claude Desktop などでは `create_photo_upload_link` を
 **LLM の応答**:
 > [写真セクション](https://training-logger.discord.jp/sessions/42#photos)をブラウザで開き、登録に使った写真を選んでアップロードしてください。JPEG / PNG / WebP、1 枚 10 MiB 以下、1 セッション 4 枚までです。
 
-Claude Code などローカルファイルを読める環境では、ユーザーが保存を希望した場合に限り、ファイルを base64 化して `upload_session_photo` で直接送信できる。申告する `content_type` にかかわらず、サーバは magic bytes で実際の形式を検証する。
+どのクライアントでも、ユーザーが保存を希望した場合に限り、返されたリンクをブラウザで開いてアップロードする。
 
 ### 例 5: スキーマで表現できない項目の要望起票（create_feedback）
 

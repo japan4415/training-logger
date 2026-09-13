@@ -77,7 +77,6 @@ graph TB
     MCP --> D1
     REST --> D1
     SSR --> D1
-    MCP --> R2
     REST --> R2
 ```
 
@@ -92,7 +91,7 @@ graph TB
 
 custom domain では `/sessions/*` と `/api/*` を Cloudflare Access の Allow ポリシーで保護する。`/mcp` は ChatGPT / Claude の認証なしコネクタから到達できるよう Bypass とし、配布物を直接取得させる場合だけ `/skills/*` も Bypass の候補とする。アプリケーション内でも写真の POST / DELETE は Access JWT と Fetch Metadata を検証するが、`/mcp` 自体は認証しない。
 
-Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` の `workers_dev: true` を残すと `*.workers.dev` 側から Access を迂回できるため、本番では `false` にするか、同等の保護を追加する。画像取得 URL を含め、公開経路が custom domain だけになっていることを確認する。
+Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` は `workers_dev: false` に設定済みで、`*.workers.dev` URL を無効化している。画像取得 URL を含め、公開経路は custom domain だけに限定する。
 
 ## リクエストフロー
 
@@ -167,7 +166,7 @@ training-logger/
 │   │   └── tools/               # 各 MCP ツールの実装
 │   │       ├── exercises.ts     # search_exercises, register_exercise
 │   │       ├── workouts.ts      # log_workout, update_workout, delete_workout
-│   │       ├── photos.ts        # 写真リンク発行・base64 アップロード
+│   │       ├── photos.ts        # 写真アップロード画面のリンク発行
 │   │       └── history.ts       # get_history
 │   ├── api/                     # REST API (Web UI 向け)
 │   │   ├── routes.ts            # API ルーティング

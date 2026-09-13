@@ -17,7 +17,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
+  "workers_dev": false,
   "routes": [
     {
       "pattern": "training-logger.discord.jp",
@@ -51,7 +51,7 @@
 }
 ```
 
-`workers_dev: true` は現在のリポジトリ設定と一致するが、custom domain に設定した Cloudflare Access を `https://<worker>.<account>.workers.dev` から迂回できる。本番では `workers_dev: false` に変更するか、`workers.dev` 側にも同等の保護を適用することを推奨する。
+`workers_dev: false` により `https://<worker>.<account>.workers.dev` は無効化済みで、公開経路は Cloudflare Access を設定した custom domain のみに限定する。
 
 ## 初期構築手順
 
@@ -141,7 +141,7 @@ pnpm exec wrangler deploy
 本番環境（production）のみ運用する。個人利用のため preview 環境を設ける利益が薄い。
 
 - **本番**: `wrangler deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `wrangler secret put` で設定
-- **ローカル開発**: `wrangler dev` で起動。D1 と R2 binding はローカルでエミュレートされる。マイグレーション適用は `wrangler d1 migrations apply training-logger-db --local`。写真 POST / DELETE の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定する。本番ではこの変数を設定しない。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
+- **ローカル開発**: `wrangler dev` で起動。D1 と R2 binding はローカルでエミュレートされる。マイグレーション適用は `wrangler d1 migrations apply training-logger-db --local`。写真 POST / DELETE の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定できるが、このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。書き込みリクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
 
 ## CI/CD
 

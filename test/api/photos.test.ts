@@ -11,6 +11,7 @@ const app = new Hono<{ Bindings: Bindings }>();
 registerApiRoutes(app);
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+const SAME_ORIGIN = { "Sec-Fetch-Site": "same-origin" };
 const allowEnv = () => ({
 	...env,
 	PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1",
@@ -38,7 +39,7 @@ describe("session photos API", () => {
 		});
 		const created = await app.request(
 			`/api/sessions/${session.id}/photos`,
-			{ method: "POST", body: photoForm(JPEG) },
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		expect(created.status).toBe(201);
@@ -72,7 +73,7 @@ describe("session photos API", () => {
 		const path = `/api/sessions/${session.id}/photos`;
 		const malformed = await app.request(
 			path,
-			{ method: "POST", body: new FormData() },
+			{ method: "POST", headers: SAME_ORIGIN, body: new FormData() },
 			allowEnv(),
 		);
 		expect(malformed.status).toBe(400);
@@ -80,7 +81,11 @@ describe("session photos API", () => {
 
 		const unsupported = await app.request(
 			path,
-			{ method: "POST", body: photoForm(new TextEncoder().encode("GIF")) },
+			{
+				method: "POST",
+				headers: SAME_ORIGIN,
+				body: photoForm(new TextEncoder().encode("GIF")),
+			},
 			allowEnv(),
 		);
 		expect(unsupported.status).toBe(400);
@@ -90,7 +95,7 @@ describe("session photos API", () => {
 		large.set(JPEG);
 		const tooLarge = await app.request(
 			path,
-			{ method: "POST", body: photoForm(large) },
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(large) },
 			allowEnv(),
 		);
 		expect(tooLarge.status).toBe(400);
@@ -100,7 +105,7 @@ describe("session photos API", () => {
 	it("returns 404 for a missing session", async () => {
 		const response = await app.request(
 			"/api/sessions/99999/photos",
-			{ method: "POST", body: photoForm(JPEG) },
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		expect(response.status).toBe(404);
@@ -116,7 +121,7 @@ describe("session photos API", () => {
 				(
 					await app.request(
 						path,
-						{ method: "POST", body: photoForm(JPEG) },
+						{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
 						allowEnv(),
 					)
 				).status,
@@ -124,7 +129,7 @@ describe("session photos API", () => {
 		}
 		const response = await app.request(
 			path,
-			{ method: "POST", body: photoForm(JPEG) },
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		expect(response.status).toBe(409);
@@ -141,7 +146,7 @@ describe("session photos API", () => {
 		const path = `/api/sessions/${session.id}/photos`;
 		const unauthorized = await app.request(
 			path,
-			{ method: "POST", body: photoForm(JPEG) },
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
 			{ ...env, PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: undefined },
 		);
 		expect(unauthorized.status).toBe(401);
@@ -165,18 +170,73 @@ describe("session photos API", () => {
 		});
 		const created = await app.request(
 			`/api/sessions/${session.id}/photos`,
-			{ method: "POST", body: photoForm(JPEG) },
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		const { photo } = (await created.json()) as { photo: { url: string } };
 		const deleted = await app.request(
 			photo.url,
-			{ method: "DELETE" },
+			{ method: "DELETE", headers: SAME_ORIGIN },
 			allowEnv(),
 		);
 		expect(deleted.status).toBe(204);
 		expect(
 			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
 		).toHaveLength(0);
+	});
+
+	it("rejects a delete when Sec-Fetch-Site is missing", async () => {
+		const { session } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const created = await app.request(
+			`/api/sessions/${session.id}/photos`,
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			allowEnv(),
+		);
+		const { photo } = (await created.json()) as { photo: { url: string } };
+
+		const response = await app.request(
+			photo.url,
+			{ method: "DELETE" },
+			allowEnv(),
+		);
+		expect(response.status).toBe(403);
+		expect((await response.json()).error).toBe("csrf_forbidden");
+		expect(
+			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+		).toHaveLength(1);
+	});
+
+	it("returns 404 when a photo is addressed through another session", async () => {
+		const { session: owner } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const { session: other } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-15",
+		});
+		const created = await app.request(
+			`/api/sessions/${owner.id}/photos`,
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			allowEnv(),
+		);
+		const { photo } = (await created.json()) as {
+			photo: { id: string; url: string };
+		};
+
+		const wrongPath = `/api/sessions/${other.id}/photos/${photo.id}`;
+		expect((await app.request(wrongPath, {}, allowEnv())).status).toBe(404);
+		expect(
+			(
+				await app.request(
+					wrongPath,
+					{ method: "DELETE", headers: SAME_ORIGIN },
+					allowEnv(),
+				)
+			).status,
+		).toBe(404);
+		expect(
+			await env.PHOTOS.get(`sessions/2026-09-14/${photo.id}.jpg`),
+		).not.toBeNull();
 	});
 });

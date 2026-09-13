@@ -351,7 +351,7 @@ CREATE TABLE session_photos (
 CREATE INDEX idx_session_photos_session_id ON session_photos(session_id);
 ```
 
-`ON DELETE CASCADE` が削除するのは D1 の `session_photos` 行だけで、R2 オブジェクトは削除しない。このため `deleteSession` は D1 のセッションを DELETE する前に写真の `r2_key` を列挙し、R2 をアプリケーション側で補償削除する。R2 削除に失敗した場合は `console.error` に記録して D1 DELETE を続行するため、運用時はログを監視し、残存オブジェクトを必要に応じて除去する。
+`ON DELETE CASCADE` が削除するのは D1 の `session_photos` 行だけで、R2 オブジェクトは削除しない。このため `deleteSession` は D1 のセッションを DELETE する前に写真の `r2_key` を列挙し、R2 をアプリケーション側で削除する。R2 削除に 1 件でも失敗した場合は D1 のセッション削除を中断してエラーを返し、写真行と `r2_key` を保持する。呼び出し元は再試行でき、追跡不能な R2 オブジェクトを残さない。
 
 ## 計画 vs 実績
 
