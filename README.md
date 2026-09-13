@@ -9,7 +9,7 @@
 ## 特徴
 
 - **AI チャットから記録**: ChatGPT・Claude に話しかけるだけで筋トレを記録（MCP 接続）
-- **ノート写真も OK**: 手書きノートの写真を送れば LLM が読み取って構造化・登録
+- **ノート写真も OK**: 手書きノートの写真を送れば LLM が読み取って構造化・登録（Claude 向け登録手順 Skill も提供）
 - **Web で振り返り**: 過去の記録をブラウザで閲覧。種目別の推移をチャートで確認
 - **チャットから改善要望**: 「こんな機能がほしい」と言えば GitHub issue が自動起票され、アプリ自体が進化する
 - **Cloudflare 無料枠で運用**: Workers + D1 + Access。個人利用なら完全無料
@@ -33,6 +33,7 @@ graph LR
 | [docs/architecture.md](docs/architecture.md) | 技術スタック・システム構成・認証・リクエストフロー・リポジトリ構成 |
 | [docs/database.md](docs/database.md) | テーブル設計・ER 図・マイグレーション方針 |
 | [docs/mcp-server.md](docs/mcp-server.md) | MCP ツール仕様・エンドポイント・各クライアントの接続手順 |
+| [docs/skill.md](docs/skill.md) | 登録手順 Skill（Agent Skills）の仕様・導入・利用手順 |
 | [docs/anatomy.md](docs/anatomy.md) | Atlasの筋肉カタログ・種目ごとの対応・出典 |
 | [docs/web-ui.md](docs/web-ui.md) | Web UI 画面設計・SSR 構成・htmx による部分更新 |
 | [docs/deployment.md](docs/deployment.md) | デプロイ手順・Cloudflare 設定・環境変数・CI/CD |
@@ -67,6 +68,8 @@ wrangler d1 migrations apply training-logger-db --local
 | Claude Desktop | mcp-remote ブリッジ経由 |
 
 詳細な接続手順は [docs/mcp-server.md](docs/mcp-server.md) を参照してください。
+
+また、Claude（claude.ai / Claude Code）向けに、手書きノート写真からの登録を安全・確実に行う手順 Skill（`log-workout`）を提供しています。導入手順は [docs/skill.md](docs/skill.md) を参照してください。
 
 ## 開発フロー
 
