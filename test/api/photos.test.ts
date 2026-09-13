@@ -100,6 +100,44 @@ describe("session photos API", () => {
 		);
 		expect(tooLarge.status).toBe(400);
 		expect((await tooLarge.json()).error).toBe("too_large");
+
+		const rejectedBeforeParsing = await app.request(
+			path,
+			{
+				method: "POST",
+				headers: {
+					...SAME_ORIGIN,
+					"Content-Length": String(PHOTO_MAX_BYTES + 64 * 1024 + 1),
+				},
+				body: photoForm(JPEG),
+			},
+			allowEnv(),
+		);
+		expect(rejectedBeforeParsing.status).toBe(413);
+		expect((await rejectedBeforeParsing.json()).error).toBe("too_large");
+	});
+
+	it("redirects a native HTML form upload back to the photo section", async () => {
+		const { session } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const response = await app.request(
+			`/api/sessions/${session.id}/photos`,
+			{
+				method: "POST",
+				headers: {
+					...SAME_ORIGIN,
+					Accept: "text/html,application/xhtml+xml",
+					"Sec-Fetch-Mode": "navigate",
+				},
+				body: photoForm(JPEG),
+			},
+			allowEnv(),
+		);
+		expect(response.status).toBe(303);
+		expect(response.headers.get("Location")).toBe(
+			`/sessions/${session.id}#photos`,
+		);
 	});
 
 	it("returns 404 for a missing session", async () => {
@@ -152,6 +190,14 @@ describe("session photos API", () => {
 		expect(unauthorized.status).toBe(401);
 		expect((await unauthorized.json()).error).toBe("access_not_configured");
 
+		const readUnauthorized = await app.request(
+			path,
+			{},
+			{ ...env, PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: undefined },
+		);
+		expect(readUnauthorized.status).toBe(401);
+		expect((await readUnauthorized.json()).error).toBe("access_not_configured");
+
 		const forbidden = await app.request(
 			path,
 			{
@@ -183,6 +229,57 @@ describe("session photos API", () => {
 		expect(
 			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
 		).toHaveLength(0);
+	});
+
+	it("prunes a stale D1 row when the R2 object is missing from a list", async () => {
+		const { session } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const created = await app.request(
+			`/api/sessions/${session.id}/photos`,
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			allowEnv(),
+		);
+		const { photo } = (await created.json()) as {
+			photo: { id: string; url: string };
+		};
+		await env.PHOTOS.delete(`sessions/2026-09-14/${photo.id}.jpg`);
+
+		const response = await app.request(
+			`/api/sessions/${session.id}/photos`,
+			{},
+			allowEnv(),
+		);
+		expect(response.status).toBe(200);
+		expect((await response.json()).photos).toHaveLength(0);
+		expect(
+			await env.DB.prepare("SELECT id FROM session_photos WHERE id = ?")
+				.bind(photo.id)
+				.first(),
+		).toBeNull();
+	});
+
+	it("returns 404 and prunes metadata when an image body is missing", async () => {
+		const { session } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const created = await app.request(
+			`/api/sessions/${session.id}/photos`,
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			allowEnv(),
+		);
+		const { photo } = (await created.json()) as {
+			photo: { id: string; url: string };
+		};
+		await env.PHOTOS.delete(`sessions/2026-09-14/${photo.id}.jpg`);
+
+		const response = await app.request(photo.url, {}, allowEnv());
+		expect(response.status).toBe(404);
+		expect(
+			await env.DB.prepare("SELECT id FROM session_photos WHERE id = ?")
+				.bind(photo.id)
+				.first(),
+		).toBeNull();
 	});
 
 	it("rejects a delete when Sec-Fetch-Site is missing", async () => {

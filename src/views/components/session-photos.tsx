@@ -78,13 +78,12 @@ export function SessionPhotos(props: {
 			)}
 
 			{photos.length >= PHOTO_MAX_PER_SESSION ? (
-				<p
-					class="photo-upload-status photo-upload-limit"
-					role="status"
-					aria-live="polite"
-				>
-					4枚まで追加済みです。追加するには削除してください。
-				</p>
+				<>
+					<p class="photo-upload-limit">
+						4枚まで追加済みです。追加するには削除してください。
+					</p>
+					<p class="photo-upload-status" role="status" aria-live="polite" />
+				</>
 			) : (
 				<form
 					class="photo-upload-form"
@@ -102,7 +101,6 @@ export function SessionPhotos(props: {
 						type="file"
 						name="photo"
 						accept={PHOTO_ALLOWED_TYPES.join(",")}
-						multiple
 					/>
 					<p class="photo-upload-note">
 						JPEG・PNG・WebP／1枚 {PHOTO_MAX_BYTES / (1024 * 1024)}

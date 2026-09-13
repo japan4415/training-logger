@@ -110,16 +110,10 @@ export type AccessAuthResult =
 	| { ok: true; user: JwtPayload | null }
 	| { ok: false; response: Response };
 
-/** Apply Fetch Metadata CSRF checks and Cloudflare Access authentication. */
-export async function requireAccessUser(
+async function authenticateAccessUser(
 	c: Context<{ Bindings: Bindings }>,
 	fetchFn: FetchFn = fetch,
 ): Promise<AccessAuthResult> {
-	const fetchSite = c.req.header("Sec-Fetch-Site")?.toLowerCase();
-	if (!fetchSite || (fetchSite !== "same-origin" && fetchSite !== "none")) {
-		return { ok: false, response: c.json({ error: "csrf_forbidden" }, 403) };
-	}
-
 	const { ACCESS_TEAM_DOMAIN: domain, ACCESS_AUD: audience } = c.env;
 	if (!domain || !audience) {
 		const hostname = new URL(c.req.url).hostname.toLowerCase();
@@ -148,4 +142,25 @@ export async function requireAccessUser(
 	} catch {
 		return { ok: false, response: c.json({ error: "unauthorized" }, 401) };
 	}
+}
+
+/** Apply Fetch Metadata CSRF checks and Cloudflare Access authentication. */
+export async function requireAccessUser(
+	c: Context<{ Bindings: Bindings }>,
+	fetchFn: FetchFn = fetch,
+): Promise<AccessAuthResult> {
+	const fetchSite = c.req.header("Sec-Fetch-Site")?.toLowerCase();
+	if (!fetchSite || (fetchSite !== "same-origin" && fetchSite !== "none")) {
+		return { ok: false, response: c.json({ error: "csrf_forbidden" }, 403) };
+	}
+
+	return authenticateAccessUser(c, fetchFn);
+}
+
+/** Verify Cloudflare Access for a read-only request without a CSRF check. */
+export async function requireAccessUserForRead(
+	c: Context<{ Bindings: Bindings }>,
+	fetchFn: FetchFn = fetch,
+): Promise<AccessAuthResult> {
+	return authenticateAccessUser(c, fetchFn);
 }

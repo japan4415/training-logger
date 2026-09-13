@@ -2,15 +2,21 @@ import type { Context } from "hono";
 import {
 	deleteSessionPhoto,
 	getSessionPhoto,
-	listSessionPhotos,
+	listExistingSessionPhotos,
+	PHOTO_MAX_BYTES,
+	removeMissingSessionPhotoMetadata,
 	storeSessionPhoto,
 } from "../db/session-photos.js";
 import { getSessionById } from "../db/sessions.js";
 import type { SessionPhotoRow } from "../db/types.js";
 import type { Bindings } from "../env.js";
-import { requireAccessUser } from "../security/access-auth.js";
+import {
+	requireAccessUser,
+	requireAccessUserForRead,
+} from "../security/access-auth.js";
 
 type AppContext = Context<{ Bindings: Bindings }>;
+const MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024;
 
 function sessionId(c: AppContext): number | null {
 	const id = Number(c.req.param("id"));
@@ -28,16 +34,20 @@ function photoJson(photo: SessionPhotoRow) {
 }
 
 export async function listPhotos(c: AppContext) {
+	const auth = await requireAccessUserForRead(c);
+	if (!auth.ok) return auth.response;
 	const id = sessionId(c);
 	if (!id) return c.json({ error: "Invalid session ID" }, 400);
 	if (!(await getSessionById(c.env.DB, id))) {
 		return c.json({ error: "Session not found" }, 404);
 	}
-	const photos = await listSessionPhotos(c.env.DB, id);
+	const photos = await listExistingSessionPhotos(c.env, id);
 	return c.json({ photos: photos.map(photoJson) });
 }
 
 export async function getPhoto(c: AppContext) {
+	const auth = await requireAccessUserForRead(c);
+	if (!auth.ok) return auth.response;
 	const id = sessionId(c);
 	if (!id) return c.json({ error: "Invalid session ID" }, 400);
 	const photo = await getSessionPhoto(
@@ -47,7 +57,10 @@ export async function getPhoto(c: AppContext) {
 	);
 	if (!photo) return c.json({ error: "Photo not found" }, 404);
 	const object = await c.env.PHOTOS.get(photo.r2_key);
-	if (!object) return c.json({ error: "Photo not found" }, 404);
+	if (!object) {
+		await removeMissingSessionPhotoMetadata(c.env.DB, photo);
+		return c.json({ error: "Photo not found" }, 404);
+	}
 	return new Response(object.body, {
 		headers: {
 			"Content-Type": photo.content_type,
@@ -67,6 +80,13 @@ export async function createPhoto(c: AppContext) {
 	if (!id) return c.json({ error: "invalid_request" }, 400);
 	const session = await getSessionById(c.env.DB, id);
 	if (!session) return c.json({ error: "Session not found" }, 404);
+	const contentLength = Number(c.req.header("Content-Length"));
+	if (
+		Number.isFinite(contentLength) &&
+		contentLength > PHOTO_MAX_BYTES + MULTIPART_OVERHEAD_ALLOWANCE
+	) {
+		return c.json({ error: "too_large" }, 413);
+	}
 
 	let body: FormData;
 	try {
@@ -78,6 +98,9 @@ export async function createPhoto(c: AppContext) {
 	if (!(file instanceof File)) {
 		return c.json({ error: "invalid_request" }, 400);
 	}
+	if (file.size > PHOTO_MAX_BYTES) {
+		return c.json({ error: "too_large" }, 400);
+	}
 	const result = await storeSessionPhoto(
 		c.env,
 		session,
@@ -86,6 +109,15 @@ export async function createPhoto(c: AppContext) {
 	if (!result.ok) {
 		const status = result.error === "limit_exceeded" ? 409 : 400;
 		return c.json({ error: result.error }, status);
+	}
+	const acceptsHtml = c.req
+		.header("Accept")
+		?.toLowerCase()
+		.includes("text/html");
+	const isNavigation =
+		c.req.header("Sec-Fetch-Mode")?.toLowerCase() === "navigate";
+	if (acceptsHtml && isNavigation) {
+		return c.redirect(`/sessions/${id}#photos`, 303);
 	}
 	return c.json({ photo: photoJson(result.photo) }, 201);
 }

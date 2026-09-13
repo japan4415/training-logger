@@ -12,6 +12,7 @@
 	--success: #34C759;
 	--warning: #FF9500;
 	--danger: #FF3B30;
+	--danger-small-text: #C8102E;
 	--header-bg: rgba(255, 255, 255, 0.72);
 	--radius-card: 12px;
 	--radius-btn: 8px;
@@ -34,6 +35,7 @@
 		--success: #30D158;
 		--warning: #FF9F0A;
 		--danger: #FF453A;
+		--danger-small-text: #FF6961;
 		--header-bg: rgba(0, 0, 0, 0.72);
 		--shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 1px rgba(0, 0, 0, 0.2);
 		--shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.4);
@@ -622,7 +624,7 @@ a.exercise-card:active {
 
 .photo-delete-start {
 	width: 100%;
-	color: var(--danger);
+	color: var(--danger-small-text);
 }
 
 .photo-delete-confirmation {
@@ -648,7 +650,7 @@ a.exercise-card:active {
 }
 
 .photo-delete-confirm {
-	color: var(--danger);
+	color: var(--danger-small-text);
 }
 
 .photo-delete-start:hover,
@@ -752,7 +754,7 @@ a.exercise-card:active {
 }
 
 .photo-upload-status[data-state="error"] {
-	color: var(--danger);
+	color: var(--danger-small-text);
 }
 
 @media (prefers-reduced-motion: reduce) {

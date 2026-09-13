@@ -2,6 +2,44 @@
 	"use strict";
 
 	const MAX_PHOTOS = 4;
+	const MUTATION_CONTROLS = [
+		".photo-upload-input",
+		".photo-upload-submit",
+		".photo-delete-start",
+		".photo-delete-confirm",
+		".photo-delete-cancel",
+	].join(",");
+
+	function enhancePhotoInputs(root = document) {
+		for (const input of root.querySelectorAll?.(".photo-upload-input") || []) {
+			input.multiple = true;
+		}
+	}
+
+	function isMutationBusy(source) {
+		return (
+			source.closest(".session-photos-content")?.dataset.photoBusy === "true"
+		);
+	}
+
+	function setMutationBusy(source, busy) {
+		const content = source.closest(".session-photos-content");
+		if (!content) return;
+		if (busy) {
+			content.dataset.photoBusy = "true";
+		} else {
+			delete content.dataset.photoBusy;
+		}
+		for (const control of content.querySelectorAll(MUTATION_CONTROLS)) {
+			if (busy) {
+				control.dataset.photoDisabledBefore = String(control.disabled);
+				control.disabled = true;
+			} else {
+				control.disabled = control.dataset.photoDisabledBefore === "true";
+				delete control.dataset.photoDisabledBefore;
+			}
+		}
+	}
 
 	function statusElement(source) {
 		return source
@@ -48,7 +86,46 @@
 		return "処理に失敗しました。時間をおいて再度お試しください。";
 	}
 
-	async function reloadFragment(source, message, isError = false) {
+	function restoreFocus(target, focusTarget) {
+		const details = target.closest("details.session-photos");
+		const summary = details?.querySelector(":scope > summary");
+		if (focusTarget.kind === "upload") {
+			const uploadControl = target.querySelector(
+				".photo-upload-input, .photo-upload-submit",
+			);
+			if (uploadControl) {
+				uploadControl.focus();
+				return;
+			}
+			if (summary) {
+				summary.focus();
+				return;
+			}
+			target.querySelector(".photo-delete-start")?.focus();
+			return;
+		}
+
+		const deleteButtons = target.querySelectorAll(".photo-delete-start");
+		const nextButton = deleteButtons[
+			Math.min(focusTarget.index, deleteButtons.length - 1)
+		];
+		if (nextButton) {
+			nextButton.focus();
+			return;
+		}
+		if (summary) {
+			summary.focus();
+			return;
+		}
+		target.querySelector(".photo-upload-input, .photo-upload-submit")?.focus();
+	}
+
+	async function reloadFragment(
+		source,
+		message,
+		isError = false,
+		focusTarget = { kind: "upload" },
+	) {
 		const content = source.closest(".session-photos-content");
 		const target = source.closest("#session-photos-target");
 		const fragmentUrl = content?.dataset.fragmentUrl;
@@ -64,6 +141,7 @@
 		// client-provided strings.
 		target.innerHTML = await response.text();
 		if (window.htmx) window.htmx.process(target);
+		enhancePhotoInputs(target);
 
 		const refreshed = target.querySelector(".session-photos-content");
 		const details = target.closest("details.session-photos");
@@ -72,6 +150,7 @@
 			summary.textContent = `写真 (${refreshed.dataset.photoCount})`;
 		}
 		if (refreshed) setStatus(refreshed, message, isError);
+		restoreFocus(target, focusTarget);
 	}
 
 	function openPhotosFromHash() {
@@ -81,20 +160,29 @@
 	}
 
 	if (document.readyState === "loading") {
-		document.addEventListener("DOMContentLoaded", openPhotosFromHash, {
-			once: true,
-		});
+		document.addEventListener(
+			"DOMContentLoaded",
+			() => {
+				openPhotosFromHash();
+				enhancePhotoInputs();
+			},
+			{ once: true },
+		);
 	} else {
 		openPhotosFromHash();
+		enhancePhotoInputs();
 	}
+	document.addEventListener("htmx:afterSwap", (event) => {
+		enhancePhotoInputs(event.target);
+	});
 
 	document.addEventListener("submit", async (event) => {
 		const form = event.target.closest?.(".photo-upload-form");
 		if (!form) return;
 		event.preventDefault();
+		if (isMutationBusy(form)) return;
 
 		const input = form.querySelector(".photo-upload-input");
-		const submit = form.querySelector(".photo-upload-submit");
 		const files = Array.from(input?.files || []);
 		if (files.length === 0) {
 			setStatus(form, "アップロードする写真を選択してください。", true);
@@ -113,8 +201,7 @@
 			return;
 		}
 
-		input.disabled = true;
-		submit.disabled = true;
+		setMutationBusy(form, true);
 		let successfulCount = 0;
 		let activeFile = files[0];
 		try {
@@ -165,14 +252,14 @@
 				setStatus(form, message, true);
 			}
 		} finally {
-			input.disabled = false;
-			submit.disabled = false;
+			setMutationBusy(form, false);
 		}
 	});
 
 	document.addEventListener("click", async (event) => {
 		const start = event.target.closest?.(".photo-delete-start");
 		if (start) {
+			if (start.disabled || isMutationBusy(start)) return;
 			const confirmation = document.getElementById(
 				start.getAttribute("aria-controls") || "",
 			);
@@ -202,10 +289,19 @@
 
 		const confirm = event.target.closest?.(".photo-delete-confirm");
 		if (!confirm) return;
+		if (confirm.disabled || isMutationBusy(confirm)) return;
 		const confirmation = confirm.closest(".photo-delete-confirmation");
 		const question = confirmation?.querySelector(".photo-delete-question");
-		const controls = confirmation?.querySelectorAll("button") || [];
-		for (const control of controls) control.disabled = true;
+		const items = Array.from(
+			confirm
+				.closest(".session-photos-content")
+				?.querySelectorAll(".session-photo-item") || [],
+		);
+		const deletedIndex = Math.max(
+			0,
+			items.indexOf(confirm.closest(".session-photo-item")),
+		);
+		setMutationBusy(confirm, true);
 		if (question) question.textContent = "削除中…";
 		setStatus(confirm, "写真を削除中…");
 		try {
@@ -215,15 +311,18 @@
 			});
 			if (!response.ok) {
 				setStatus(confirm, await responseError(response), true);
-				for (const control of controls) control.disabled = false;
 				if (question) question.textContent = "削除しますか？";
 				return;
 			}
-			await reloadFragment(confirm, "写真を削除しました。");
+			await reloadFragment(confirm, "写真を削除しました。", false, {
+				kind: "delete",
+				index: deletedIndex,
+			});
 		} catch (_error) {
 			setStatus(confirm, "通信に失敗しました。接続を確認して再度お試しください。", true);
-			for (const control of controls) control.disabled = false;
 			if (question) question.textContent = "削除しますか？";
+		} finally {
+			setMutationBusy(confirm, false);
 		}
 	});
 })();
