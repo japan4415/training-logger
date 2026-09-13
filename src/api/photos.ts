@@ -80,7 +80,11 @@ export async function createPhoto(c: AppContext) {
 	if (!id) return c.json({ error: "invalid_request" }, 400);
 	const session = await getSessionById(c.env.DB, id);
 	if (!session) return c.json({ error: "Session not found" }, 404);
-	const contentLength = Number(c.req.header("Content-Length"));
+	const contentLengthHeader = c.req.header("Content-Length");
+	if (contentLengthHeader === undefined) {
+		return c.json({ error: "length_required" }, 411);
+	}
+	const contentLength = Number(contentLengthHeader);
 	if (
 		Number.isFinite(contentLength) &&
 		contentLength > PHOTO_MAX_BYTES + MULTIPART_OVERHEAD_ALLOWANCE

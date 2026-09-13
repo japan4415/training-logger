@@ -12,6 +12,7 @@ registerApiRoutes(app);
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
 const SAME_ORIGIN = { "Sec-Fetch-Site": "same-origin" };
+const UPLOAD_HEADERS = { ...SAME_ORIGIN, "Content-Length": "1024" };
 const allowEnv = () => ({
 	...env,
 	PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1",
@@ -39,7 +40,7 @@ describe("session photos API", () => {
 		});
 		const created = await app.request(
 			`/api/sessions/${session.id}/photos`,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		expect(created.status).toBe(201);
@@ -73,7 +74,7 @@ describe("session photos API", () => {
 		const path = `/api/sessions/${session.id}/photos`;
 		const malformed = await app.request(
 			path,
-			{ method: "POST", headers: SAME_ORIGIN, body: new FormData() },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: new FormData() },
 			allowEnv(),
 		);
 		expect(malformed.status).toBe(400);
@@ -83,7 +84,7 @@ describe("session photos API", () => {
 			path,
 			{
 				method: "POST",
-				headers: SAME_ORIGIN,
+				headers: UPLOAD_HEADERS,
 				body: photoForm(new TextEncoder().encode("GIF")),
 			},
 			allowEnv(),
@@ -95,7 +96,7 @@ describe("session photos API", () => {
 		large.set(JPEG);
 		const tooLarge = await app.request(
 			path,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(large) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(large) },
 			allowEnv(),
 		);
 		expect(tooLarge.status).toBe(400);
@@ -117,6 +118,22 @@ describe("session photos API", () => {
 		expect((await rejectedBeforeParsing.json()).error).toBe("too_large");
 	});
 
+	it("returns 411 before parsing when Content-Length is missing", async () => {
+		const { session } = await getOrCreateSession(env.DB, {
+			sessionDate: "2026-09-14",
+		});
+		const response = await app.request(
+			`/api/sessions/${session.id}/photos`,
+			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			allowEnv(),
+		);
+		expect(response.status).toBe(411);
+		expect((await response.json()).error).toBe("length_required");
+		expect(
+			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+		).toHaveLength(0);
+	});
+
 	it("redirects a native HTML form upload back to the photo section", async () => {
 		const { session } = await getOrCreateSession(env.DB, {
 			sessionDate: "2026-09-14",
@@ -126,7 +143,7 @@ describe("session photos API", () => {
 			{
 				method: "POST",
 				headers: {
-					...SAME_ORIGIN,
+					...UPLOAD_HEADERS,
 					Accept: "text/html,application/xhtml+xml",
 					"Sec-Fetch-Mode": "navigate",
 				},
@@ -143,7 +160,7 @@ describe("session photos API", () => {
 	it("returns 404 for a missing session", async () => {
 		const response = await app.request(
 			"/api/sessions/99999/photos",
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		expect(response.status).toBe(404);
@@ -159,7 +176,7 @@ describe("session photos API", () => {
 				(
 					await app.request(
 						path,
-						{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+						{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 						allowEnv(),
 					)
 				).status,
@@ -167,7 +184,7 @@ describe("session photos API", () => {
 		}
 		const response = await app.request(
 			path,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		expect(response.status).toBe(409);
@@ -184,7 +201,7 @@ describe("session photos API", () => {
 		const path = `/api/sessions/${session.id}/photos`;
 		const unauthorized = await app.request(
 			path,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			{ ...env, PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: undefined },
 		);
 		expect(unauthorized.status).toBe(401);
@@ -216,7 +233,7 @@ describe("session photos API", () => {
 		});
 		const created = await app.request(
 			`/api/sessions/${session.id}/photos`,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		const { photo } = (await created.json()) as { photo: { url: string } };
@@ -237,13 +254,15 @@ describe("session photos API", () => {
 		});
 		const created = await app.request(
 			`/api/sessions/${session.id}/photos`,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		const { photo } = (await created.json()) as {
 			photo: { id: string; url: string };
 		};
-		await env.PHOTOS.delete(`sessions/2026-09-14/${photo.id}.jpg`);
+		await env.PHOTOS.delete(
+			`sessions/2026-09-14/${session.id}/${photo.id}.jpg`,
+		);
 
 		const response = await app.request(
 			`/api/sessions/${session.id}/photos`,
@@ -265,13 +284,15 @@ describe("session photos API", () => {
 		});
 		const created = await app.request(
 			`/api/sessions/${session.id}/photos`,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		const { photo } = (await created.json()) as {
 			photo: { id: string; url: string };
 		};
-		await env.PHOTOS.delete(`sessions/2026-09-14/${photo.id}.jpg`);
+		await env.PHOTOS.delete(
+			`sessions/2026-09-14/${session.id}/${photo.id}.jpg`,
+		);
 
 		const response = await app.request(photo.url, {}, allowEnv());
 		expect(response.status).toBe(404);
@@ -288,7 +309,7 @@ describe("session photos API", () => {
 		});
 		const created = await app.request(
 			`/api/sessions/${session.id}/photos`,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		const { photo } = (await created.json()) as { photo: { url: string } };
@@ -314,7 +335,7 @@ describe("session photos API", () => {
 		});
 		const created = await app.request(
 			`/api/sessions/${owner.id}/photos`,
-			{ method: "POST", headers: SAME_ORIGIN, body: photoForm(JPEG) },
+			{ method: "POST", headers: UPLOAD_HEADERS, body: photoForm(JPEG) },
 			allowEnv(),
 		);
 		const { photo } = (await created.json()) as {
@@ -333,7 +354,7 @@ describe("session photos API", () => {
 			).status,
 		).toBe(404);
 		expect(
-			await env.PHOTOS.get(`sessions/2026-09-14/${photo.id}.jpg`),
+			await env.PHOTOS.get(`sessions/2026-09-14/${owner.id}/${photo.id}.jpg`),
 		).not.toBeNull();
 	});
 });

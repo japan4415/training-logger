@@ -151,7 +151,7 @@ export async function storeSessionPhoto(
 	if (!contentType) return { ok: false, error: "unsupported_type" };
 
 	const id = crypto.randomUUID();
-	const r2Key = `sessions/${session.session_date}/${id}.${EXTENSIONS[contentType]}`;
+	const r2Key = `sessions/${session.session_date}/${session.id}/${id}.${EXTENSIONS[contentType]}`;
 	await env.PHOTOS.put(r2Key, bytes, {
 		httpMetadata: {
 			contentType,
@@ -224,8 +224,9 @@ export async function deleteSessionPhotosForSession(
 export async function sweepSessionPhotoObjects(
 	bucket: R2Bucket,
 	sessionDate: string,
+	sessionId: number,
 ): Promise<void> {
-	const prefix = `sessions/${sessionDate}/`;
+	const prefix = `sessions/${sessionDate}/${sessionId}/`;
 	try {
 		let cursor: string | undefined;
 		do {

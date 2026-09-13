@@ -9,7 +9,7 @@
 | ランタイム | Cloudflare Workers | ステートレス、エッジ実行 |
 | フレームワーク | Hono v4.x | MCP / REST / SSR / 静的配信を単一 Worker で統合 |
 | データベース | Cloudflare D1 | エッジ SQLite。[無料枠](https://developers.cloudflare.com/d1/platform/pricing/): 5GB / 読み 500万行/日 / 書き 10万行/日 |
-| オブジェクトストレージ | Cloudflare R2 | `training-logger-photos` にセッション写真を保存。D1 はメタデータだけを保持 |
+| オブジェクトストレージ | Cloudflare R2 | `training-logger-photos` に `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` 形式でセッション写真を保存。D1 はメタデータだけを保持 |
 | ブラウザ認証 | Cloudflare Access | custom domain のセッション画面と写真書き込み API を保護 |
 | 静的配信 | Workers Assets | `wrangler.jsonc` の `assets.directory` で設定。[2026年現在 Pages より Workers + Assets が Cloudflare 推奨](https://developers.cloudflare.com/workers/static-assets/) |
 | MCP SDK | `@modelcontextprotocol/sdk` v1.30.x (stable) | `McpServer` + `registerTool` + Zod でツール定義 |
