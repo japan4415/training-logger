@@ -10,6 +10,7 @@
 
 - **AI チャットから記録**: ChatGPT・Claude に話しかけるだけで筋トレを記録（MCP 接続）
 - **ノート写真も OK**: 手書きノートの写真を送れば LLM が読み取って構造化・登録（Claude 向け登録手順 Skill も提供）
+- **元の写真も保存**: 登録に使ったノート写真を R2 に保存し、セッション詳細から振り返り可能
 - **Web で振り返り**: 過去の記録をブラウザで閲覧。種目別の推移をチャートで確認
 - **チャットから改善要望**: 「こんな機能がほしい」と言えば GitHub issue が自動起票され、アプリ自体が進化する
 - **Cloudflare 無料枠で運用**: Workers + D1 + Access。個人利用なら完全無料
@@ -22,6 +23,7 @@ graph LR
     C["ブラウザ"] -->|HTTPS| D["Cloudflare Access"]
     D --> B
     B --> E["D1 Database"]
+    B --> G["R2<br/>training-logger-photos"]
     B -->|issue 起票| F["GitHub Issues"]
 ```
 
