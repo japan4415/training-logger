@@ -95,7 +95,7 @@ describe("MCP feedback tool handler", () => {
 
 			expect(mockFetch).toHaveBeenCalledTimes(1);
 			expect(mockFetch).toHaveBeenCalledWith(
-				"https://api.github.com/repos/japan4415/training-logger/issues?state=open&per_page=100",
+				"https://api.github.com/repos/japan4415/training-logger/issues?state=open&per_page=100&page=1",
 				expect.objectContaining({
 					method: "GET",
 					headers: expect.objectContaining({
@@ -305,6 +305,202 @@ describe("MCP feedback tool handler", () => {
 			expect(result.isError).toBe(true);
 			if (!result.isError) throw new Error("Expected isError: true");
 			expect(result.error).toContain("Network connection error");
+		});
+
+		it("should create new issue even if open PR with identical title exists", async () => {
+			const mockFetch = vi.fn();
+			// 1. GET open issues returns a PR with the identical title
+			mockFetch.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify([
+						{
+							number: 10,
+							title: "プルリクと同名の要望",
+							html_url: "https://github.com/japan4415/training-logger/pull/10",
+							pull_request: {
+								url: "https://api.github.com/repos/japan4415/training-logger/pulls/10",
+							},
+						},
+					]),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+			// 2. POST creates issue
+			mockFetch.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						number: 60,
+						html_url: "https://github.com/japan4415/training-logger/issues/60",
+						title: "プルリクと同名の要望",
+						state: "open",
+					}),
+					{
+						status: 201,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+
+			const result = await createFeedbackHandler(
+				{ ...env, GITHUB_TOKEN: "mock-pat-token" },
+				{
+					title: "プルリクと同名の要望",
+					body: "PRとタイトルが被っていてもissueは起票されるべき",
+				},
+				mockFetch,
+			);
+
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+			expect(result.duplicate).toBeUndefined();
+			expect(result.isError).toBeUndefined();
+			if (result.duplicate || result.isError) {
+				throw new Error("Expected successful issue creation");
+			}
+			expect(result.issue_number).toBe(60);
+			expect(result.title).toBe("プルリクと同名の要望");
+		});
+
+		it("should detect duplicate on page 2 across paginated open issues", async () => {
+			const mockFetch = vi.fn();
+			// Page 1: 100 unrelated issues
+			const page1Issues = Array.from({ length: 100 }, (_, i) => ({
+				number: i + 1,
+				title: `Other Issue ${i + 1}`,
+				html_url: `https://github.com/japan4415/training-logger/issues/${i + 1}`,
+			}));
+			mockFetch.mockResolvedValueOnce(
+				new Response(JSON.stringify(page1Issues), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+
+			// Page 2: contains duplicate issue
+			const page2Issues = [
+				{
+					number: 105,
+					title: "2ページ目の重複要望",
+					html_url: "https://github.com/japan4415/training-logger/issues/105",
+				},
+			];
+			mockFetch.mockResolvedValueOnce(
+				new Response(JSON.stringify(page2Issues), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+
+			const result = await createFeedbackHandler(
+				{ ...env, GITHUB_TOKEN: "mock-pat-token" },
+				{
+					title: "  2ページ目の重複要望  ",
+					body: "重複テスト",
+				},
+				mockFetch,
+			);
+
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+			expect(mockFetch.mock.calls[0][0]).toBe(
+				"https://api.github.com/repos/japan4415/training-logger/issues?state=open&per_page=100&page=1",
+			);
+			expect(mockFetch.mock.calls[1][0]).toBe(
+				"https://api.github.com/repos/japan4415/training-logger/issues?state=open&per_page=100&page=2",
+			);
+			expect(result.duplicate).toBe(true);
+			if (!result.duplicate) throw new Error("Expected duplicate: true");
+			expect(result.issue_number).toBe(105);
+			expect(result.title).toBe("2ページ目の重複要望");
+		});
+
+		it("should retain status and message on 403 Forbidden error response", async () => {
+			const mockFetch = vi.fn();
+			mockFetch.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						message: "API rate limit exceeded",
+					}),
+					{
+						status: 403,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+
+			const result = await createFeedbackHandler(
+				{ ...env, GITHUB_TOKEN: "mock-pat-token" },
+				{
+					title: "403 テスト",
+					body: "レート制限エラー",
+				},
+				mockFetch,
+			);
+
+			expect(result.isError).toBe(true);
+			if (!result.isError) throw new Error("Expected isError: true");
+			expect(result.status).toBe(403);
+			expect(result.message).toBe("API rate limit exceeded");
+			expect(result.error).toContain("403");
+			expect(result.error).toContain("API rate limit exceeded");
+		});
+
+		it("should retain status and message on 500 Internal Server Error response", async () => {
+			const mockFetch = vi.fn();
+			mockFetch.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						message: "Internal Server Error",
+					}),
+					{
+						status: 500,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+
+			const result = await createFeedbackHandler(
+				{ ...env, GITHUB_TOKEN: "mock-pat-token" },
+				{
+					title: "500 テスト",
+					body: "サーバエラー",
+				},
+				mockFetch,
+			);
+
+			expect(result.isError).toBe(true);
+			if (!result.isError) throw new Error("Expected isError: true");
+			expect(result.status).toBe(500);
+			expect(result.message).toBe("Internal Server Error");
+			expect(result.error).toContain("500");
+			expect(result.error).toContain("Internal Server Error");
+		});
+
+		it("should use raw text as message when error response body is not JSON", async () => {
+			const mockFetch = vi.fn();
+			mockFetch.mockResolvedValueOnce(
+				new Response("502 Bad Gateway: upstream connect error", {
+					status: 502,
+					headers: { "Content-Type": "text/plain" },
+				}),
+			);
+
+			const result = await createFeedbackHandler(
+				{ ...env, GITHUB_TOKEN: "mock-pat-token" },
+				{
+					title: "非JSONエラーテスト",
+					body: "HTML/プレーンテキストのエラー",
+				},
+				mockFetch,
+			);
+
+			expect(result.isError).toBe(true);
+			if (!result.isError) throw new Error("Expected isError: true");
+			expect(result.status).toBe(502);
+			expect(result.message).toBe("502 Bad Gateway: upstream connect error");
+			expect(result.error).toContain("502");
+			expect(result.error).toContain("502 Bad Gateway: upstream connect error");
 		});
 	});
 });

@@ -499,7 +499,7 @@ training-logger への機能要望・不具合報告・種目追加要望を Git
 **挙動**:
 
 1. `env.GITHUB_TOKEN` が未設定の場合、`isError: true` とともに事前入力済み URL `https://github.com/{owner}/{repo}/issues/new?title=<encoded>&body=<encoded>&labels=enhancement,from-mcp` を返し、LLM が手動起票を案内できるようにする。リポジトリは環境変数 `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` で上書き可能（既定値: `japan4415` / `training-logger`）
-2. `GET https://api.github.com/repos/{owner}/{repo}/issues?state=open&per_page=100` で open issue を取得し、`title` が完全一致（trim 後）する issue があれば新規起票せず `{ duplicate: true, issue_number, html_url, title }` を返す
+2. `GET https://api.github.com/repos/{owner}/{repo}/issues?state=open&per_page=100&page=N` を `page=1` から順に呼び出し、返却件数が 100 未満になるまで（上限 10 ページ）走査する。返却要素のうち Pull Request（`pull_request` フィールドを持つ要素）を除外した上で、`title` が完全一致（trim 後）する open issue があれば新規起票せず `{ duplicate: true, issue_number, html_url, title }` を返す。上限 10 ページに達した場合は走査を打ち切り、それ以降の重複は検出しない
 3. `POST https://api.github.com/repos/{owner}/{repo}/issues` を `fetch` で呼ぶ。ヘッダに `Accept: application/vnd.github+json`、`Authorization: Bearer <token>`、`X-GitHub-Api-Version: 2022-11-28`、`User-Agent: training-logger-mcp`、`Content-Type: application/json` を設定。本文末尾に `\n\n---\n起票元: training-logger MCP create_feedback (category: <category>)` を付加し、ラベルに `["enhancement", "from-mcp"]` を指定する
 4. 201 成功時は `{ issue_number, html_url, title, state }` を返す
 

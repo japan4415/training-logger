@@ -167,8 +167,14 @@ training-logger/
 ├── public/                      # Workers Assets (サイトルートで配信)
 │   ├── css/
 │   │   └── style.css
-│   └── js/
-│       └── chart-init.js
+│   ├── js/
+│   │   └── chart-init.js
+│   └── skills/                  # Skill 配布物
+├── skills/
+│   └── log-workout/
+│       └── SKILL.md             # Skill 正本
+├── scripts/
+│   └── build-skill.mjs          # 配布物生成
 ├── migrations/                  # D1 マイグレーション
 │   ├── 0001_initial_schema.sql
 │   └── README.md
