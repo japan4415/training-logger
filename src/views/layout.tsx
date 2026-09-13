@@ -48,6 +48,7 @@ export const Layout: FC<LayoutProps> = (props) => (
 				<footer class="app-footer">
 					<p>training-logger</p>
 				</footer>
+				<script src="/js/session-photos.js"></script>
 			</body>
 		</html>
 	</>
