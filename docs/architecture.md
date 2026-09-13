@@ -83,13 +83,13 @@ graph TB
 単一の Cloudflare Worker 内で Hono が以下の 4 つの役割を統合する:
 
 - **MCP Handler**: `POST /mcp` で MCP クライアントからのリクエストを処理
-- **REST API**: `GET /api/*` で Web UI 向けデータを取得し、写真に限って認証済みの POST / DELETE を提供
+- **REST API**: `GET /api/*` で Web UI 向けデータを取得し、写真 API は GET / POST / DELETE を Worker 内でも認証する
 - **SSR**: Hono JSX でサーバサイドレンダリング。`/` をルートとしてページを配信
 - **Workers Assets**: `public/` ディレクトリの静的ファイルをサイトルートで配信（例: `/css/style.css`, `/js/chart-init.js`）
 
 ### Cloudflare Access の保護範囲
 
-custom domain では `/sessions/*` と `/api/*` を Cloudflare Access の Allow ポリシーで保護する。`/mcp` は ChatGPT / Claude の認証なしコネクタから到達できるよう Bypass とし、配布物を直接取得させる場合だけ `/skills/*` も Bypass の候補とする。アプリケーション内でも写真の POST / DELETE は Access JWT と Fetch Metadata を検証するが、`/mcp` 自体は認証しない。
+custom domain では `/sessions/*` と `/api/*` を Cloudflare Access の Allow ポリシーで保護する。`/mcp` は ChatGPT / Claude の認証なしコネクタから到達できるよう Bypass とし、配布物を直接取得させる場合だけ `/skills/*` も Bypass の候補とする。アプリケーション内でも写真の GET / POST / DELETE は Access JWT を検証し、POST / DELETE は加えて Fetch Metadata を検証するが、`/mcp` 自体は認証しない。
 
 Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` は `workers_dev: false` に設定済みで、`*.workers.dev` URL を無効化している。画像取得 URL を含め、公開経路は custom domain だけに限定する。
 

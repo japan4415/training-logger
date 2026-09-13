@@ -1,5 +1,8 @@
 import type { Bindings } from "../env.js";
-import { deleteSessionPhotosForSession } from "./session-photos.js";
+import {
+	deleteSessionPhotosForSession,
+	sweepSessionPhotoObjects,
+} from "./session-photos.js";
 import type { WorkoutSessionRow } from "./types.js";
 
 /**
@@ -159,11 +162,17 @@ export async function deleteSession(
 	env: Pick<Bindings, "DB" | "PHOTOS">,
 	id: number,
 ): Promise<boolean> {
+	const session = await getSessionById(env.DB, id);
+	if (!session) return false;
 	await deleteSessionPhotosForSession(env, id);
 	const result = await env.DB.prepare(
 		"DELETE FROM workout_sessions WHERE id = ?",
 	)
 		.bind(id)
 		.run();
-	return result.meta.changes > 0;
+	const deleted = result.meta.changes > 0;
+	if (deleted) {
+		await sweepSessionPhotoObjects(env.PHOTOS, session.session_date);
+	}
+	return deleted;
 }

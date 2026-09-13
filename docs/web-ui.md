@@ -257,11 +257,11 @@ htmx のリクエストには `HX-Request` ヘッダーが付与される。サ�
 
 ### 写真アップロードと認可
 
-`public/js/session-photos.js` は複数選択されたファイルを 1 枚ずつ `FormData` の `photo` フィールドに入れ、`fetch` で `POST /api/sessions/:id/photos` へ送る。`credentials: "same-origin"` を指定して Cloudflare Access の `CF_Authorization` cookie を送り、各ファイルの進捗を表示する。成功後は写真断片を再取得して件数と一覧を更新する。
+`public/js/session-photos.js` は初期化時にファイル入力へ `multiple` を付与し、複数選択されたファイルを 1 枚ずつ `FormData` の `photo` フィールドに入れ、`fetch` で `POST /api/sessions/:id/photos` へ送る。JavaScript 無効時は 1 枚だけをネイティブ送信し、成功時は `303` でセッション詳細の `#photos` へ戻る。`credentials: "same-origin"` を指定して Cloudflare Access の `CF_Authorization` cookie を送り、各ファイルの進捗を表示する。成功後は写真断片を再取得して件数と一覧を更新する。
 
-エラーは `unsupported_type`、`too_large`、`limit_exceeded`、401（Access 未認証または未設定）をユーザー向けの文言に変換して表示する。逐次アップロードの途中で失敗した場合も、1 件以上成功済みなら断片を再取得し、「N件成功、M件目（ファイル名）失敗」を `aria-live` に表示して入力をクリアする。4 枚到達時はアップロードフォームを表示せず、削除が必要なことを案内する。削除確認はラベル付き `fieldset` とし、確定後は確認・キャンセルの両ボタンを無効化して「削除中…」を表示する。操作はキーボードだけでも実行でき、進捗表示の動きは `prefers-reduced-motion` を尊重する。
+エラーは `unsupported_type`、`too_large`、`limit_exceeded`、401（Access 未認証または未設定）をユーザー向けの文言に変換して表示する。逐次アップロードの途中で失敗した場合も、1 件以上成功済みなら断片を再取得し、「N件成功、M件目（ファイル名）失敗」を `aria-live` に表示して入力をクリアする。4 枚到達時はアップロードフォームを表示せず、削除が必要な恒久案内と一時的な live status を別要素で表示する。断片更新後は、アップロード時は入力（上限到達時は写真 details の summary）、削除時は次の削除ボタンまたは summary へフォーカスを移す。削除確認はラベル付き `fieldset` とし、確定後は確認・キャンセルの両ボタンを無効化して「削除中…」を表示する。写真セクションの変更操作は直列化し、アップロード中は全削除操作、削除中はアップロードと他の削除操作を無効化する。操作はキーボードだけでも実行でき、進捗表示の動きは `prefers-reduced-motion` を尊重する。
 
-写真の POST / DELETE は `requireAccessUser` で保護する。`Sec-Fetch-Site` が `same-origin` / `none` 以外、またはヘッダー自体がないリクエストは 403 `csrf_forbidden`、Access JWT がない・無効なら 401、Access 環境変数が未設定なら fail-closed で 401 `access_not_configured` とする。JWT は `Cf-Access-Jwt-Assertion` ヘッダー、なければ `CF_Authorization` cookie から取得し、Access JWKS による RS256 署名、`aud`、`exp` を検証する。ローカル開発では request Host が `localhost` / `127.0.0.1` の場合だけ `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` で認証を省略できる。
+写真 API の GET / POST / DELETE は Access JWT 検証を通す。POST / DELETE だけは加えて `Sec-Fetch-Site` を検査し、`same-origin` / `none` 以外、またはヘッダー自体がないリクエストを 403 `csrf_forbidden` とする。Access JWT がない・無効なら 401、Access 環境変数が未設定なら読み書きとも fail-closed で 401 `access_not_configured` とする。JWT は `Cf-Access-Jwt-Assertion` ヘッダー、なければ `CF_Authorization` cookie から取得し、Access JWKS による RS256 署名、`aud`、`exp` を検証する。ローカル開発では request Host が `localhost` / `127.0.0.1` の場合だけ `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` で認証を省略できる。
 
 ### Chart.js 初期化
 

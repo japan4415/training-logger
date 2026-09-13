@@ -98,7 +98,7 @@ Cloudflare Zero Trust で custom domain を対象とした Self-hosted applicati
 | `/sessions/*` | Allow | セッション画面と写真 UI を Access ログイン済みユーザーに限定 |
 | `/api/*` | Allow | 写真本体とブラウザ書き込み API を保護 |
 
-写真の POST / DELETE は Worker 内でも Access JWT を検証する。Zero Trust の Access application 画面から **Application Audience (AUD) Tag** を取得し、team domain とともに Worker vars に設定する。`ACCESS_TEAM_DOMAIN` は `example.cloudflareaccess.com` のようにスキームを含めない。
+写真 API の GET / POST / DELETE は Worker 内でも Access JWT を検証する。Zero Trust の Access application 画面から **Application Audience (AUD) Tag** を取得し、team domain とともに Worker vars に設定する。`ACCESS_TEAM_DOMAIN` は `example.cloudflareaccess.com` のようにスキームを含めない。
 
 平文の構成値として管理する場合は `wrangler.jsonc` に追加する。
 
@@ -116,7 +116,7 @@ pnpm exec wrangler secret put ACCESS_TEAM_DOMAIN
 pnpm exec wrangler secret put ACCESS_AUD
 ```
 
-どちらか一方でも未設定ならブラウザ書き込み API は 401 `access_not_configured` で fail-closed になる。
+どちらか一方でも未設定なら写真 API は読み書きとも 401 `access_not_configured` で fail-closed になる。
 
 ### 6. デプロイ
 
@@ -134,14 +134,14 @@ pnpm exec wrangler deploy
 - `POST /mcp` で MCP `initialize` が成功する
 - ブラウザで `/` にアクセスすると Web UI が表示される
 - Access 認証後にセッション画面を開き、写真の追加・取得・削除ができる
-- 未認証の写真 POST / DELETE が 401 または Access 側で拒否される
+- 未認証の写真 GET / POST / DELETE が 401 または Access 側で拒否される
 
 ## 環境
 
 本番環境（production）のみ運用する。個人利用のため preview 環境を設ける利益が薄い。
 
 - **本番**: `wrangler deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `wrangler secret put` で設定
-- **ローカル開発**: `wrangler dev` で起動。D1 と R2 binding はローカルでエミュレートされる。マイグレーション適用は `wrangler d1 migrations apply training-logger-db --local`。写真 POST / DELETE の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定できるが、このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。書き込みリクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
+- **ローカル開発**: `wrangler dev` で起動。D1 と R2 binding はローカルでエミュレートされる。マイグレーション適用は `wrangler d1 migrations apply training-logger-db --local`。写真 API の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定できるが、このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。写真の書き込みリクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
 
 ## CI/CD
 

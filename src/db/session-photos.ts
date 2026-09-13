@@ -65,6 +65,74 @@ export async function getSessionPhoto(
 		.first<SessionPhotoRow>();
 }
 
+async function deleteSessionPhotoMetadata(
+	db: D1Database,
+	sessionId: number,
+	photoId: string,
+): Promise<void> {
+	await db
+		.prepare("DELETE FROM session_photos WHERE session_id = ? AND id = ?")
+		.bind(sessionId, photoId)
+		.run();
+}
+
+/** Remove metadata for objects already missing from R2 and return usable photos. */
+export async function listExistingSessionPhotos(
+	env: Pick<Bindings, "DB" | "PHOTOS">,
+	sessionId: number,
+): Promise<SessionPhotoRow[]> {
+	const photos = await listSessionPhotos(env.DB, sessionId);
+	const objects = await Promise.all(
+		photos.map(async (photo) => ({
+			photo,
+			object: await env.PHOTOS.head(photo.r2_key),
+		})),
+	);
+	const existing: SessionPhotoRow[] = [];
+	for (const { photo, object } of objects) {
+		if (object) {
+			existing.push(photo);
+			continue;
+		}
+		await deleteSessionPhotoMetadata(env.DB, sessionId, photo.id);
+		console.warn("Removed session photo metadata for a missing R2 object", {
+			sessionId,
+			photoId: photo.id,
+			r2Key: photo.r2_key,
+		});
+	}
+	return existing;
+}
+
+/** Remove one stale metadata row after an R2 miss. */
+export async function removeMissingSessionPhotoMetadata(
+	db: D1Database,
+	photo: SessionPhotoRow,
+): Promise<void> {
+	await deleteSessionPhotoMetadata(db, photo.session_id, photo.id);
+	console.warn("Removed session photo metadata for a missing R2 object", {
+		sessionId: photo.session_id,
+		photoId: photo.id,
+		r2Key: photo.r2_key,
+	});
+}
+
+async function compensateR2Put(
+	bucket: R2Bucket,
+	r2Key: string,
+	reason: string,
+): Promise<void> {
+	try {
+		await bucket.delete(r2Key);
+	} catch (error) {
+		console.error("Failed to compensate session photo R2 put", {
+			r2Key,
+			reason,
+			error,
+		});
+	}
+}
+
 export async function storeSessionPhoto(
 	env: Pick<Bindings, "DB" | "PHOTOS">,
 	session: { id: number; session_date: string },
@@ -110,17 +178,17 @@ export async function storeSessionPhoto(
 			.run();
 
 		if (result.meta.changes === 0) {
-			await env.PHOTOS.delete(r2Key);
+			await compensateR2Put(env.PHOTOS, r2Key, "photo limit exceeded");
 			return { ok: false, error: "limit_exceeded" };
 		}
 	} catch (error) {
-		await env.PHOTOS.delete(r2Key);
+		await compensateR2Put(env.PHOTOS, r2Key, "D1 insert failed");
 		throw error;
 	}
 
 	const photo = await getSessionPhoto(env.DB, session.id, id);
 	if (!photo) {
-		await env.PHOTOS.delete(r2Key);
+		await compensateR2Put(env.PHOTOS, r2Key, "stored row could not be read");
 		throw new Error("Failed to retrieve stored session photo");
 	}
 	return { ok: true, photo };
@@ -149,5 +217,28 @@ export async function deleteSessionPhotosForSession(
 	const photos = await listSessionPhotos(env.DB, sessionId);
 	if (photos.length > 0) {
 		await env.PHOTOS.delete(photos.map((photo) => photo.r2_key));
+	}
+}
+
+/** Best-effort cleanup for objects created concurrently with session deletion. */
+export async function sweepSessionPhotoObjects(
+	bucket: R2Bucket,
+	sessionDate: string,
+): Promise<void> {
+	const prefix = `sessions/${sessionDate}/`;
+	try {
+		let cursor: string | undefined;
+		do {
+			const listed = await bucket.list({ prefix, cursor });
+			if (listed.objects.length > 0) {
+				await bucket.delete(listed.objects.map((object) => object.key));
+			}
+			cursor = listed.truncated ? listed.cursor : undefined;
+		} while (cursor);
+	} catch (error) {
+		console.error("Failed to sweep session photo R2 objects", {
+			prefix,
+			error,
+		});
 	}
 }

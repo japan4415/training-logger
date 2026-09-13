@@ -1,7 +1,10 @@
 import { Hono } from "hono";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { Bindings } from "../../src/env.js";
-import { requireAccessUser } from "../../src/security/access-auth.js";
+import {
+	requireAccessUser,
+	requireAccessUserForRead,
+} from "../../src/security/access-auth.js";
 
 const DOMAIN = "team.cloudflareaccess.com";
 const AUDIENCE = "test-audience";
@@ -33,6 +36,11 @@ function appFor(fetchFn: typeof fetch) {
 	const app = new Hono<{ Bindings: Bindings }>();
 	app.post("/write", async (c) => {
 		const auth = await requireAccessUser(c, fetchFn);
+		if (!auth.ok) return auth.response;
+		return c.json({ ok: true });
+	});
+	app.get("/read", async (c) => {
+		const auth = await requireAccessUserForRead(c, fetchFn);
 		if (!auth.ok) return auth.response;
 		return c.json({ ok: true });
 	});
@@ -95,6 +103,22 @@ describe("Cloudflare Access authentication", () => {
 		expect(fetchFn).toHaveBeenCalledWith(
 			`https://${DOMAIN}/cdn-cgi/access/certs`,
 		);
+	});
+
+	it("authenticates reads without requiring Fetch Metadata", async () => {
+		const fetchFn = jwksFetch();
+		const token = await jwt({
+			sub: "user-id",
+			aud: AUDIENCE,
+			exp: Math.floor(Date.now() / 1000) + 60,
+		});
+		const response = await appFor(fetchFn).request(
+			"/read",
+			{ headers: { "Cf-Access-Jwt-Assertion": token } },
+			bindings(),
+		);
+		expect(response.status).toBe(200);
+		expect(fetchFn).toHaveBeenCalledOnce();
 	});
 
 	it.each([

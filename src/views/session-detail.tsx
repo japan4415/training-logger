@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { getSessionDetail } from "../db/queries.js";
-import { listSessionPhotos } from "../db/session-photos.js";
+import { listExistingSessionPhotos } from "../db/session-photos.js";
 import { getSessionById } from "../db/sessions.js";
 import type { Bindings } from "../env.js";
 import { getSessionAnatomy, MuscleMap } from "./components/muscle-map.js";
@@ -73,7 +73,7 @@ export async function sessionDetailHandler(
 
 	const { session, exercises } = detail;
 	const anatomy = getSessionAnatomy(exercises);
-	const photos = await listSessionPhotos(db, id);
+	const photos = await listExistingSessionPhotos(c.env, id);
 
 	return c.html(
 		<Layout title="セッション詳細" activeNav="sessions">
@@ -211,7 +211,7 @@ export async function sessionPhotosHandler(
 		);
 	}
 
-	const photos = await listSessionPhotos(c.env.DB, id);
+	const photos = await listExistingSessionPhotos(c.env, id);
 	if (c.req.header("HX-Request") === "true") {
 		return c.html(<SessionPhotos sessionId={id} photos={photos} />);
 	}

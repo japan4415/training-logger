@@ -351,7 +351,9 @@ CREATE TABLE session_photos (
 CREATE INDEX idx_session_photos_session_id ON session_photos(session_id);
 ```
 
-`ON DELETE CASCADE` が削除するのは D1 の `session_photos` 行だけで、R2 オブジェクトは削除しない。このため `deleteSession` は D1 のセッションを DELETE する前に写真の `r2_key` を列挙し、R2 をアプリケーション側で削除する。R2 削除に 1 件でも失敗した場合は D1 のセッション削除を中断してエラーを返し、写真行と `r2_key` を保持する。呼び出し元は再試行でき、追跡不能な R2 オブジェクトを残さない。
+`ON DELETE CASCADE` が削除するのは D1 の `session_photos` 行だけで、R2 オブジェクトは削除しない。このため `deleteSession` は D1 のセッションを DELETE する前に写真の `r2_key` を列挙し、R2 をアプリケーション側で削除する。R2 削除に 1 件でも失敗した場合は D1 のセッション削除を中断してエラーを返し、写真行と `r2_key` を保持する。D1 のセッション削除後は日付プレフィックス `sessions/{session_date}/` を列挙し、削除と同時進行したアップロードが残したオブジェクトを best-effort で事後スイープする。スイープ失敗は記録し、完了済みの D1 削除結果は維持する。
+
+R2 を先に削除した後で D1 の削除に失敗すると、写真行が欠損オブジェクトを一時的に参照し得る。API 一覧と SSR 写真断片は最大 4 行を `head` で確認し、R2 に存在しない行を D1 から除外・削除する。本体 GET も R2 miss 時に 404 を返して該当行を削除し、再アクセス時に自己修復する。R2 put 後の D1 INSERT 失敗や枚数上限では R2 の補償削除を試みるが、その補償失敗は元の結果・例外を上書きせずログへ記録する。
 
 ## 計画 vs 実績
 

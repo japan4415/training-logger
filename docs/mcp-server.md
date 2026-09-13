@@ -400,12 +400,13 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **挙動**:
 
-- `delete_entire_session = true` の場合: `workout_sessions` を DELETE する。CASCADE により配下の `session_exercises` と `sets` も削除される
+- `delete_entire_session = true` の場合: 写真本体を R2 から削除してから `workout_sessions` を DELETE する。CASCADE により配下の `session_photos`、`session_exercises`、`sets` も削除される
 - `delete_entire_session = false` の場合: 指定した `session_exercises` を DELETE する。CASCADE により配下の `sets` も削除される
 
 **エラー応答**:
 
 - `update_workout` と同様の対象特定エラー
+- R2 の写真削除に失敗した場合はセッションを削除せず、写真削除の再試行を促すエラー
 
 ### get_history
 

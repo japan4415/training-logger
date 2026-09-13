@@ -318,9 +318,8 @@ describe("Session views", () => {
 			expect(html).toContain('aria-expanded="false"');
 			expect(html).toContain('<fieldset id="photo-delete-confirm-photo-1"');
 			expect(html).toContain('class="photo-upload-form"');
-			expect(html).toContain(
-				'accept="image/jpeg,image/png,image/webp" multiple',
-			);
+			expect(html).toContain('accept="image/jpeg,image/png,image/webp"');
+			expect(html).not.toContain(" multiple");
 		});
 
 		it("replaces upload controls with guidance at the four-photo limit", async () => {
@@ -334,6 +333,11 @@ describe("Session views", () => {
 			expect(html).not.toContain('class="photo-upload-form"');
 			expect(html).toContain(
 				"4枚まで追加済みです。追加するには削除してください。",
+			);
+			expect(html).toContain('class="photo-upload-limit"');
+			expect(html).toContain('class="photo-upload-status"');
+			expect(html).not.toContain(
+				'class="photo-upload-status photo-upload-limit"',
 			);
 		});
 
