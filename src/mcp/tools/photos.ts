@@ -13,13 +13,9 @@ import type { Bindings } from "../../env.js";
 
 const SITE_ORIGIN = "https://training-logger.discord.jp";
 
-export interface PhotoToolError {
-	isError: true;
-	error: string;
-	message?: string;
-}
-
 const PHOTO_ERROR_MESSAGES = {
+	session_not_found:
+		"指定日のワークアウトがありません。先に log_workout で登録してください。",
 	invalid_base64:
 		"data_base64 は改行なしの標準 base64（英数字、+、/、末尾の = のみ）で指定してください。",
 	unsupported_type:
@@ -68,6 +64,12 @@ export function decodeBase64Strict(value: string): Uint8Array {
 	const padded = unpadded.padEnd(Math.ceil(unpadded.length / 4) * 4, "=");
 	try {
 		const decoded = atob(padded);
+		const canonical = btoa(decoded);
+		if (
+			(firstPadding === -1 ? canonical.replace(/=+$/, "") : canonical) !== value
+		) {
+			throw new Error("Invalid base64 data");
+		}
 		return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
 	} catch {
 		throw new Error("Invalid base64 data");
@@ -86,7 +88,8 @@ export async function uploadSessionPhotoHandler(
 	if (!session) {
 		return {
 			isError: true as const,
-			error: `${params.date} のワークアウトがありません。先に log_workout で登録してください。`,
+			error: "session_not_found",
+			message: PHOTO_ERROR_MESSAGES.session_not_found,
 		};
 	}
 
@@ -181,7 +184,6 @@ export function registerPhotoTools(server: McpServer, env: Bindings): void {
 				data_base64: z
 					.string()
 					.min(1)
-					.max(PHOTO_MAX_BASE64_CHARS)
 					.describe("画像本体の標準 base64（改行なし）"),
 				content_type: z
 					.enum(PHOTO_ALLOWED_TYPES)
