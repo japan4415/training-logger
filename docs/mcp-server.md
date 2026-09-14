@@ -29,7 +29,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 ## ツール定義
 
-本サーバは 10 のツールを提供する（記録系 6 + セッション写真 1 + Atlas 筋肉管理 2 + 機能リクエスト 1）。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
+本サーバは 11 のツールを提供する（記録系 6 + セッション写真 2 + Atlas 筋肉管理 2 + 機能リクエスト 1）。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
 
 ### search_exercises
 
@@ -467,7 +467,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **説明文** (LLM 向け):
 
-> ワークアウト記録に使った写真を保存するためのアップロード画面のリンクを返します。写真は MCP 経由では送れないため、ユーザーにこのリンクを案内してください
+> ワークアウト記録に使った写真を保存するためのアップロード画面のリンクを返します。チャットの添付画像など、ローカルファイルとして読めない画像を保存する場合にユーザーへ案内してください。
 
 **入力スキーマ**:
 
@@ -508,6 +508,58 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 - 指定日のセッションがない場合は `isError: true` と「先に `log_workout` で登録してください」を返す
 - `date` の形式が不正な場合は MCP の入力バリデーションエラーを返す
+
+### upload_session_photo
+
+登録済みワークアウトへ、ローカルで読み取った写真を base64 で直接保存する。
+
+**説明文** (LLM 向け):
+
+> ワークアウト記録に使った写真（JPEG / PNG / WebP、10 MiB 以下）を base64 で直接保存します。Claude Code などローカルファイルを読める環境向けです。チャットの添付画像は送れないため、その場合は create_photo_upload_link を使ってください。
+
+**入力スキーマ**:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "セッション日付 (YYYY-MM-DD)"
+    },
+    "data_base64": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 13981016,
+      "description": "画像本体の標準 base64（改行なし）"
+    },
+    "content_type": {
+      "type": "string",
+      "enum": ["image/jpeg", "image/png", "image/webp"],
+      "description": "画像の MIME type（任意。画像本体と一致する必要があります）"
+    }
+  },
+  "required": ["date", "data_base64"]
+}
+```
+
+**挙動**:
+
+1. `date` で既存の `workout_sessions` を検索する
+2. デコード前に `data_base64` が 13,981,016 文字以下で、改行や URL-safe 文字を含まず、標準 base64 の文字集合と末尾の `=` パディングだけを使っていることを検証する
+3. デコードした bytes の magic bytes から JPEG / PNG / WebP を判定する。任意の `content_type` が指定されても信用せず、判定結果と一致しなければ保存しない
+4. 共通の `storeSessionPhoto` で 10 MiB と 1 セッション 4 枚の上限を再検証し、R2 の `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` に保存する
+5. `{ photo_id, session_id, date, content_type, size_bytes, url }` を返す。`url` は `/api/sessions/{session_id}/photos/{photo_id}` 形式で、画像本体をツール結果には含めない
+
+**エラー応答**:
+
+- 不正な文字集合・改行・パディング・長さ超過: `isError: true`, `error: "invalid_base64"`
+- 未対応の magic bytes、または申告 `content_type` との不一致: `isError: true`, `error: "unsupported_type"`
+- デコード後のサイズが 10 MiB 超過: `isError: true`, `error: "too_large"`
+- すでに 4 枚保存済み: `isError: true`, `error: "limit_exceeded"`
+- 指定日のセッションがない場合: `isError: true` と「先に `log_workout` で登録してください」
+- 各エラーコードには、対処方法を説明する LLM 向けの `message` を併記する
 
 ### create_feedback
 
@@ -561,7 +613,7 @@ training-logger への機能要望・不具合報告・種目追加要望を Git
 
 ### ツール設計と責務の分離
 
-LLM のツール選択精度はツール数が増加するほど低下する。そのため本サーバではツールを必要最小限の 10 ツール（記録系 6 + セッション写真 1 + Atlas 筋肉管理 2 + 機能リクエスト 1）に整理している。日常的な筋トレ記録の CRUD（検索・登録・記録・更新・削除・照会）、登録後の写真アップロード画面の案内、Atlas 筋肉割当、およびスキーマで表現できない要望の issue 起票に絞り、明確な責務分離を行っている。
+LLM のツール選択精度はツール数が増加するほど低下する。そのため本サーバではツールを必要最小限の 11 ツール（記録系 6 + セッション写真 2 + Atlas 筋肉管理 2 + 機能リクエスト 1）に整理している。日常的な筋トレ記録の CRUD（検索・登録・記録・更新・削除・照会）、登録後の写真保存、Atlas 筋肉割当、およびスキーマで表現できない要望の issue 起票に絞り、明確な責務分離を行っている。
 
 ### 説明文の書き方
 
@@ -581,7 +633,7 @@ LLM のツール選択精度はツール数が増加するほど低下する。�
 
 1. **種目の登録** -- 新規登録前に `search_exercises` で日本語名・英語名の両方を検索して重複確認
 2. **日時の扱い** -- すべて Asia/Tokyo。`date` 省略時は JST の今日。相対表現も JST で解釈
-3. **記録の運用** -- 同日の `log_workout` 再呼び出しは追記。修正は `update_workout`、削除は `delete_workout`。ノート画像からの登録は、不明点を確認し下書きをユーザーに見せて承認を得てから `log_workout` を呼ぶ。ノート写真を保存したい場合は `log_workout` の後に `create_photo_upload_link` でリンクを案内する（画像本体は MCP では送れない。詳細な手順は Skill `log-workout` を参照）
+3. **記録の運用** -- 同日の `log_workout` 再呼び出しは追記。修正は `update_workout`、削除は `delete_workout`。ノート画像からの登録は、不明点を確認し下書きをユーザーに見せて承認を得てから `log_workout` を呼ぶ。ノート写真を保存したい場合は `log_workout` の後、ローカルファイルを読める場合は `upload_session_photo`、それ以外は `create_photo_upload_link` でリンクを案内する（詳細な手順は Skill `log-workout` を参照）
 4. **対応できない入力** -- スキーマで表現できない項目・単位に遭遇したらユーザーに伝え、同意を得て `create_feedback` で issue を起票する
 5. **手書きノートの速記法** -- 「reps/weight」形式（例「20/10」= 20 回・重量 10）。複数並ぶ場合は各々を独立したセットとして扱う。単位不明なら `get_history` で前回を参照するかユーザーに確認
 
@@ -597,13 +649,13 @@ MCP エンドポイント URL:
 https://training-logger.discord.jp/mcp
 ```
 
-カスタムドメインを設定済み。写真を保存する場合は、どの MCP クライアントでも記録後に `create_photo_upload_link` が返す URL をブラウザで開いてアップロードする。画像本体は MCP 経由では送信しない。
+カスタムドメインを設定済み。写真を保存する場合、Claude Code などローカルファイルを読める環境では記録後に `upload_session_photo` で base64 を直接送信できる。それ以外のクライアントでは `create_photo_upload_link` が返す URL をブラウザで開いてアップロードする。チャットの添付画像を MCP のツール引数へそのまま渡す標準経路はない。
 
-`POST /mcp` は JSON-RPC とツール結果だけを扱い、保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。
+`POST /mcp` は `upload_session_photo` の入力として base64 を受け付けるが、ツール結果から保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。
 
 ### セキュリティ境界
 
-`/mcp` は現在認証なしで公開しているが、写真本体を書き込むツールは提供しない。写真の保存は Access 保護下のブラウザ用 REST API だけで行う。
+`/mcp` は現在認証なしで公開しているため、`upload_session_photo` を使って誰でも R2 に書き込める。上限はセッションあたり 4 枚 × 10 MiB だが、セッション自体も認証なしの `log_workout` で作成できるため、R2 への書き込み総量に上限はない。このリスクを受容し、`/mcp` への認証追加を前提とした暫定運用とする。枚数・サイズ上限は入力事故の緩和策であり、認可対策ではない。
 
 一方、ブラウザ経由の `POST /api/sessions/:id/photos` と `DELETE /api/sessions/:id/photos/:photoId` は `requireAccessUser` による Fetch Metadata の CSRF 検査と Cloudflare Access JWT 検証で保護する。Zero Trust では custom domain の `/mcp` だけを Bypass とし、`/sessions/*` と `/api/*` は Allow ポリシー配下に置く。Skill の公開配布 URL が必要な場合は `/skills/*` も限定的に Bypass できる。
 
@@ -811,7 +863,20 @@ https://training-logger.discord.jp/mcp
 **ユーザー**:
 > お願いします
 
-`create_photo_upload_link` を呼び出す。
+Claude Code などローカルファイルを読める環境では、ファイルを base64 化して `upload_session_photo` を呼び出す。
+
+```json
+{
+  "date": "2026-08-16",
+  "data_base64": "iVBORw0KGgo...",
+  "content_type": "image/png"
+}
+```
+
+**LLM の応答**:
+> 元の写真を保存しました。JPEG / PNG / WebP、1 枚 10 MiB 以下、1 セッション 4 枚まで保存できます。
+
+チャットの添付画像などローカルファイルとして読めない環境では `create_photo_upload_link` を呼び出す。
 
 ```json
 {
@@ -822,7 +887,7 @@ https://training-logger.discord.jp/mcp
 **LLM の応答**:
 > [写真セクション](https://training-logger.discord.jp/sessions/42#photos)をブラウザで開き、登録に使った写真を選んでアップロードしてください。JPEG / PNG / WebP、1 枚 10 MiB 以下、1 セッション 4 枚までです。
 
-どのクライアントでも、ユーザーが保存を希望した場合に限り、返されたリンクをブラウザで開いてアップロードする。
+いずれもユーザーが保存を希望した場合に限り実行する。チャット添付を MCP 引数へ直接渡せないクライアントでは、返されたリンクをブラウザで開いてアップロードする。
 
 ### 例 5: スキーマで表現できない項目の要望起票（create_feedback）
 
