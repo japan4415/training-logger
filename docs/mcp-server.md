@@ -531,7 +531,6 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
     "data_base64": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 13981016,
       "description": "画像本体の標準 base64（改行なし）"
     },
     "content_type": {
@@ -547,7 +546,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 **挙動**:
 
 1. `date` で既存の `workout_sessions` を検索する
-2. デコード前に `data_base64` が 13,981,016 文字以下で、改行や URL-safe 文字を含まず、標準 base64 の文字集合と末尾の `=` パディングだけを使っていることを検証する
+2. ハンドラでのデコード前に `data_base64` が 13,981,016 文字以下で、改行や URL-safe 文字を含まず、標準 base64 の文字集合、末尾の `=` パディング、未使用 pad bit が 0 の正規形式だけを使っていることを検証する
 3. デコードした bytes の magic bytes から JPEG / PNG / WebP を判定する。任意の `content_type` が指定されても信用せず、判定結果と一致しなければ保存しない
 4. 共通の `storeSessionPhoto` で 10 MiB と 1 セッション 4 枚の上限を再検証し、R2 の `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` に保存する
 5. `{ photo_id, session_id, date, content_type, size_bytes, url }` を返す。`url` は `/api/sessions/{session_id}/photos/{photo_id}` 形式で、画像本体をツール結果には含めない
@@ -558,7 +557,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 - 未対応の magic bytes、または申告 `content_type` との不一致: `isError: true`, `error: "unsupported_type"`
 - デコード後のサイズが 10 MiB 超過: `isError: true`, `error: "too_large"`
 - すでに 4 枚保存済み: `isError: true`, `error: "limit_exceeded"`
-- 指定日のセッションがない場合: `isError: true` と「先に `log_workout` で登録してください」
+- 指定日のセッションがない場合: `isError: true`, `error: "session_not_found"`
 - 各エラーコードには、対処方法を説明する LLM 向けの `message` を併記する
 
 ### create_feedback

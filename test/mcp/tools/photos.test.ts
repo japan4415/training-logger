@@ -76,6 +76,8 @@ describe("MCP photo tools", () => {
 		["URL-safe characters", "_w=="],
 		["a newline", `${base64(PNG)}\n`],
 		["misplaced padding", "AA=A"],
+		["non-zero pad bits with =", "iVBORw0KGgp="],
+		["non-zero pad bits with ==", "iVBORw0KGh=="],
 		["too many characters", "A".repeat(PHOTO_MAX_BASE64_CHARS + 1)],
 	])("rejects invalid base64 containing %s", async (_case, dataBase64) => {
 		await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });
@@ -155,7 +157,8 @@ describe("MCP photo tools", () => {
 			}),
 		).toMatchObject({
 			isError: true,
-			error: expect.stringContaining("先に log_workout で登録してください"),
+			error: "session_not_found",
+			message: expect.stringContaining("先に log_workout で登録してください"),
 		});
 	});
 });
