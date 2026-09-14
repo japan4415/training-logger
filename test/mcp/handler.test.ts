@@ -1,7 +1,24 @@
-import { SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+	listSessionPhotos,
+	PHOTO_MAX_BASE64_CHARS,
+} from "../../src/db/session-photos.js";
+import { getOrCreateSession } from "../../src/db/sessions.js";
+import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
+
+const PNG_BASE64 = "iVBORw0KGgo=";
 
 describe("MCP handler", () => {
+	beforeAll(() => applyMigrations(env.DB));
+	beforeEach(async () => {
+		await cleanDatabase(env.DB);
+		const listed = await env.PHOTOS.list({ prefix: "sessions/" });
+		if (listed.objects.length) {
+			await env.PHOTOS.delete(listed.objects.map((object) => object.key));
+		}
+	});
+
 	describe("POST /mcp", () => {
 		it("initialize returns a valid JSON-RPC response", async () => {
 			const response = await SELF.fetch("http://localhost/mcp", {
@@ -45,7 +62,7 @@ describe("MCP handler", () => {
 			expect(data.result.protocolVersion).toBe("2025-11-25");
 		});
 
-		it("tools/list returns list of tools including create_feedback", async () => {
+		it("tools/list returns all 11 tools", async () => {
 			const response = await SELF.fetch("http://localhost/mcp", {
 				method: "POST",
 				headers: {
@@ -80,10 +97,10 @@ describe("MCP handler", () => {
 			expect(data.result.tools).toBeInstanceOf(Array);
 
 			const toolNames = data.result.tools.map((t) => t.name);
-			expect(toolNames).toHaveLength(10);
+			expect(toolNames).toHaveLength(11);
 			expect(toolNames).toContain("create_feedback");
 			expect(toolNames).toContain("create_photo_upload_link");
-			expect(toolNames).not.toContain("upload_session_photo");
+			expect(toolNames).toContain("upload_session_photo");
 
 			const feedbackTool = data.result.tools.find(
 				(t) => t.name === "create_feedback",
@@ -91,6 +108,27 @@ describe("MCP handler", () => {
 			expect(feedbackTool).toBeDefined();
 			expect(feedbackTool?.description).toContain(
 				"training-logger への機能要望・不具合報告・種目追加要望を GitHub issue として起票します",
+			);
+
+			const uploadTool = data.result.tools.find(
+				(t) => t.name === "upload_session_photo",
+			);
+			expect(uploadTool?.description).toContain(
+				"Claude Code などローカルファイルを読める環境向けです",
+			);
+			expect(uploadTool?.inputSchema).toMatchObject({
+				required: ["date", "data_base64"],
+				properties: {
+					data_base64: {
+						minLength: 1,
+					},
+					content_type: {
+						enum: ["image/jpeg", "image/png", "image/webp"],
+					},
+				},
+			});
+			expect(uploadTool?.inputSchema).not.toHaveProperty(
+				"properties.data_base64.maxLength",
 			);
 		});
 
@@ -136,6 +174,87 @@ describe("MCP handler", () => {
 			expect(parsed.manual_url).toContain(
 				"title=%E3%83%86%E3%82%B9%E3%83%88%E8%A6%81%E6%9C%9B",
 			);
+		});
+
+		it("tools/call stores a session photo and returns JSON content", async () => {
+			const { session } = await getOrCreateSession(env.DB, {
+				sessionDate: "2026-09-14",
+			});
+			const response = await SELF.fetch("http://localhost/mcp", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json, text/event-stream",
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 4,
+					method: "tools/call",
+					params: {
+						name: "upload_session_photo",
+						arguments: {
+							date: "2026-09-14",
+							data_base64: PNG_BASE64,
+							content_type: "image/png",
+						},
+					},
+				}),
+			});
+
+			expect(response.status).toBe(200);
+			const data = (await response.json()) as {
+				jsonrpc: string;
+				id: number;
+				result: {
+					content: Array<{ type: string; text: string }>;
+					isError?: boolean;
+				};
+			};
+			expect(data.result.isError).toBeUndefined();
+			expect(JSON.parse(data.result.content[0].text)).toMatchObject({
+				session_id: session.id,
+				date: "2026-09-14",
+				content_type: "image/png",
+				size_bytes: 8,
+			});
+			expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
+		});
+
+		it("tools/call returns invalid_base64 when data exceeds the character limit", async () => {
+			await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });
+			const response = await SELF.fetch("http://localhost/mcp", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json, text/event-stream",
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 5,
+					method: "tools/call",
+					params: {
+						name: "upload_session_photo",
+						arguments: {
+							date: "2026-09-14",
+							data_base64: "A".repeat(PHOTO_MAX_BASE64_CHARS + 1),
+						},
+					},
+				}),
+			});
+
+			expect(response.status).toBe(200);
+			const data = (await response.json()) as {
+				result: {
+					content: Array<{ type: string; text: string }>;
+					isError?: boolean;
+				};
+			};
+			expect(data.result.isError).toBe(true);
+			expect(JSON.parse(data.result.content[0].text)).toMatchObject({
+				isError: true,
+				error: "invalid_base64",
+				message: expect.any(String),
+			});
 		});
 	});
 
