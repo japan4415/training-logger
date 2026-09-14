@@ -2,6 +2,7 @@ import type { Bindings } from "../env.js";
 import type { SessionPhotoRow } from "./types.js";
 
 export const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+export const PHOTO_MAX_BASE64_CHARS = Math.ceil(PHOTO_MAX_BYTES / 3) * 4;
 export const PHOTO_MAX_PER_SESSION = 4;
 export const PHOTO_ALLOWED_TYPES = [
 	"image/jpeg",

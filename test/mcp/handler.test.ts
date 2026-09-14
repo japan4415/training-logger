@@ -1,5 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { PHOTO_MAX_BASE64_CHARS } from "../../src/db/session-photos.js";
 
 describe("MCP handler", () => {
 	describe("POST /mcp", () => {
@@ -45,7 +46,7 @@ describe("MCP handler", () => {
 			expect(data.result.protocolVersion).toBe("2025-11-25");
 		});
 
-		it("tools/list returns list of tools including create_feedback", async () => {
+		it("tools/list returns all 11 tools", async () => {
 			const response = await SELF.fetch("http://localhost/mcp", {
 				method: "POST",
 				headers: {
@@ -80,10 +81,10 @@ describe("MCP handler", () => {
 			expect(data.result.tools).toBeInstanceOf(Array);
 
 			const toolNames = data.result.tools.map((t) => t.name);
-			expect(toolNames).toHaveLength(10);
+			expect(toolNames).toHaveLength(11);
 			expect(toolNames).toContain("create_feedback");
 			expect(toolNames).toContain("create_photo_upload_link");
-			expect(toolNames).not.toContain("upload_session_photo");
+			expect(toolNames).toContain("upload_session_photo");
 
 			const feedbackTool = data.result.tools.find(
 				(t) => t.name === "create_feedback",
@@ -92,6 +93,25 @@ describe("MCP handler", () => {
 			expect(feedbackTool?.description).toContain(
 				"training-logger への機能要望・不具合報告・種目追加要望を GitHub issue として起票します",
 			);
+
+			const uploadTool = data.result.tools.find(
+				(t) => t.name === "upload_session_photo",
+			);
+			expect(uploadTool?.description).toContain(
+				"Claude Code などローカルファイルを読める環境向けです",
+			);
+			expect(uploadTool?.inputSchema).toMatchObject({
+				required: ["date", "data_base64"],
+				properties: {
+					data_base64: {
+						minLength: 1,
+						maxLength: PHOTO_MAX_BASE64_CHARS,
+					},
+					content_type: {
+						enum: ["image/jpeg", "image/png", "image/webp"],
+					},
+				},
+			});
 		});
 
 		it("tools/call executes create_feedback and returns pre-filled URL when token is unset", async () => {
