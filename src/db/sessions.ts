@@ -1,3 +1,8 @@
+import type { Bindings } from "../env.js";
+import {
+	deleteSessionPhotosForSession,
+	sweepSessionPhotoObjects,
+} from "./session-photos.js";
 import type { WorkoutSessionRow } from "./types.js";
 
 /**
@@ -150,15 +155,28 @@ export async function updateSession(
 
 /**
  * Delete a session by ID. Returns true if a row was deleted.
- * CASCADE deletes session_exercises and sets.
+ * Deletes R2 photos first, then CASCADE deletes photo rows, session exercises,
+ * and sets. If an R2 deletion fails, the D1 session remains for safe retry.
  */
 export async function deleteSession(
-	db: D1Database,
+	env: Pick<Bindings, "DB" | "PHOTOS">,
 	id: number,
 ): Promise<boolean> {
-	const result = await db
-		.prepare("DELETE FROM workout_sessions WHERE id = ?")
+	const session = await getSessionById(env.DB, id);
+	if (!session) return false;
+	await deleteSessionPhotosForSession(env, id);
+	const result = await env.DB.prepare(
+		"DELETE FROM workout_sessions WHERE id = ?",
+	)
 		.bind(id)
 		.run();
-	return result.meta.changes > 0;
+	const deleted = result.meta.changes > 0;
+	if (deleted) {
+		await sweepSessionPhotoObjects(
+			env.PHOTOS,
+			session.session_date,
+			session.id,
+		);
+	}
+	return deleted;
 }

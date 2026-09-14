@@ -12,6 +12,7 @@
 	--success: #34C759;
 	--warning: #FF9500;
 	--danger: #FF3B30;
+	--danger-small-text: #C8102E;
 	--header-bg: rgba(255, 255, 255, 0.72);
 	--radius-card: 12px;
 	--radius-btn: 8px;
@@ -34,6 +35,7 @@
 		--success: #30D158;
 		--warning: #FF9F0A;
 		--danger: #FF453A;
+		--danger-small-text: #FF6961;
 		--header-bg: rgba(0, 0, 0, 0.72);
 		--shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 1px rgba(0, 0, 0, 0.2);
 		--shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.4);
@@ -519,6 +521,256 @@ a.exercise-card:active {
 
 .back-link a:active {
 	transform: scale(0.97);
+}
+
+/* === Session Photos === */
+.session-photos {
+	background: var(--bg-tertiary);
+	border: 1px solid var(--separator);
+	border-radius: var(--radius-card);
+	box-shadow: var(--shadow);
+	overflow: hidden;
+}
+
+.session-photos > summary {
+	padding: 14px 16px;
+	font-size: 16px;
+	font-weight: 600;
+	line-height: 1.4;
+	cursor: pointer;
+	user-select: none;
+}
+
+.session-photos > summary:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -3px;
+}
+
+.session-photos[open] > summary {
+	border-bottom: 1px solid var(--separator);
+}
+
+#session-photos-target {
+	padding: 16px;
+}
+
+.session-photos-fallback,
+.session-photos-empty {
+	color: var(--label-secondary);
+	font-size: 13px;
+	line-height: 1.35;
+	text-align: center;
+}
+
+.session-photos-page-title {
+	font-size: 22px;
+	line-height: 1.25;
+}
+
+.session-photo-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.session-photo-item {
+	min-width: 0;
+	border: 1px solid var(--separator);
+	border-radius: var(--radius-btn);
+	overflow: hidden;
+	background: var(--bg-secondary);
+}
+
+.session-photo-link {
+	display: block;
+	aspect-ratio: 1;
+	background: var(--bg-secondary);
+}
+
+.session-photo-link:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+.session-photo-link img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.session-photo-actions {
+	padding: 8px;
+}
+
+.photo-delete-start,
+.photo-delete-confirm,
+.photo-delete-cancel,
+.photo-upload-submit {
+	min-height: 44px;
+	padding: 8px 12px;
+	font: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.35;
+	border: 1px solid var(--separator);
+	border-radius: var(--radius-btn);
+	background: var(--bg-tertiary);
+	color: var(--label);
+	cursor: pointer;
+	transition: transform 0.1s, background 0.15s, opacity 0.15s;
+}
+
+.photo-delete-start {
+	width: 100%;
+	color: var(--danger-small-text);
+}
+
+.photo-delete-confirmation {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 6px;
+	min-inline-size: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.photo-delete-confirmation[hidden] {
+	display: none;
+}
+
+.photo-delete-question {
+	grid-column: 1 / -1;
+	color: var(--label-secondary);
+	font-size: 11px;
+	line-height: 1.35;
+	text-align: center;
+}
+
+.photo-delete-confirm {
+	color: var(--danger-small-text);
+}
+
+.photo-delete-start:hover,
+.photo-delete-confirm:hover,
+.photo-delete-cancel:hover,
+.photo-upload-submit:hover {
+	background: var(--accent-hover);
+}
+
+.photo-delete-start:active,
+.photo-delete-confirm:active,
+.photo-delete-cancel:active,
+.photo-upload-submit:active {
+	transform: scale(0.97);
+}
+
+.photo-delete-start:focus-visible,
+.photo-delete-confirm:focus-visible,
+.photo-delete-cancel:focus-visible,
+.photo-upload-submit:focus-visible,
+.photo-upload-input:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.photo-delete-start:disabled,
+.photo-delete-confirm:disabled,
+.photo-delete-cancel:disabled,
+.photo-upload-submit:disabled {
+	cursor: wait;
+	opacity: 0.55;
+}
+
+.photo-upload-form {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--separator);
+}
+
+.photo-upload-limit {
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--separator);
+	color: var(--label-secondary);
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+@media (max-width: 400px) {
+	.photo-delete-confirmation {
+		grid-template-columns: 1fr;
+	}
+
+	.photo-delete-question {
+		grid-column: 1;
+	}
+}
+
+.session-photo-grid + .photo-upload-form {
+	margin-top: 0;
+}
+
+.photo-upload-label {
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.photo-upload-input {
+	width: 100%;
+	min-height: 44px;
+	font: inherit;
+	font-size: 13px;
+	color: var(--label);
+}
+
+.photo-upload-input::file-selector-button {
+	min-height: 38px;
+	margin-right: 8px;
+	padding: 6px 10px;
+	font: inherit;
+	border: 1px solid var(--separator);
+	border-radius: var(--radius-btn);
+	background: var(--bg-tertiary);
+	color: var(--label);
+	cursor: pointer;
+}
+
+.photo-upload-note,
+.photo-upload-status {
+	color: var(--label-secondary);
+	font-size: 11px;
+	line-height: 1.35;
+}
+
+.photo-upload-status {
+	min-height: 15px;
+}
+
+.photo-upload-status[data-state="error"] {
+	color: var(--danger-small-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.photo-delete-start,
+	.photo-delete-confirm,
+	.photo-delete-cancel,
+	.photo-upload-submit {
+		transition: none;
+	}
+
+	.photo-delete-start:active,
+	.photo-delete-confirm:active,
+	.photo-delete-cancel:active,
+	.photo-upload-submit:active {
+		transform: none;
+	}
 }
 
 /* === Footer === */

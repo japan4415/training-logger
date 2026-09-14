@@ -29,7 +29,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 ## ツール定義
 
-本サーバは 9 つのツールを提供する（記録系 6 + Atlas 筋肉管理 2 + 機能リクエスト 1）。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
+本サーバは 10 のツールを提供する（記録系 6 + セッション写真 1 + Atlas 筋肉管理 2 + 機能リクエスト 1）。以下、各ツールの説明文（LLM が読む文言）、入力スキーマ、挙動、エラー応答を記述する。
 
 ### search_exercises
 
@@ -400,12 +400,13 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **挙動**:
 
-- `delete_entire_session = true` の場合: `workout_sessions` を DELETE する。CASCADE により配下の `session_exercises` と `sets` も削除される
+- `delete_entire_session = true` の場合: 写真本体を R2 から削除してから `workout_sessions` を DELETE する。CASCADE により配下の `session_photos`、`session_exercises`、`sets` も削除される。D1 削除後の事後スイープは `sessions/{YYYY-MM-DD}/{sessionId}/` のセッション固有プレフィックスだけを対象にする
 - `delete_entire_session = false` の場合: 指定した `session_exercises` を DELETE する。CASCADE により配下の `sets` も削除される
 
 **エラー応答**:
 
 - `update_workout` と同様の対象特定エラー
+- R2 の写真削除に失敗した場合はセッションを削除せず、写真削除の再試行を促すエラー
 
 ### get_history
 
@@ -460,6 +461,54 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 - 該当データなしの場合は空の結果を返す（エラーにしない）
 
+### create_photo_upload_link
+
+登録済みワークアウトへノート写真を追加するため、ブラウザのアップロード画面へのリンクを返す。
+
+**説明文** (LLM 向け):
+
+> ワークアウト記録に使った写真を保存するためのアップロード画面のリンクを返します。写真は MCP 経由では送れないため、ユーザーにこのリンクを案内してください
+
+**入力スキーマ**:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "セッション日付 (YYYY-MM-DD)"
+    }
+  },
+  "required": ["date"]
+}
+```
+
+**挙動**:
+
+1. `date` で `workout_sessions` を検索する
+2. セッションがあれば、`session_id`、`date`、`https://training-logger.discord.jp/sessions/{session_id}#photos`、上限情報を返す
+3. ユーザーには返された URL をブラウザで開き、写真セクションから同じ写真を選ぶよう案内する
+4. ブラウザから保存された写真本体は R2 の `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` キーに格納する
+
+```json
+{
+  "session_id": 42,
+  "date": "2026-08-16",
+  "url": "https://training-logger.discord.jp/sessions/42#photos",
+  "max_photos": 4,
+  "max_bytes": 10485760,
+  "allowed_types": ["image/jpeg", "image/png", "image/webp"],
+  "note": "ブラウザで開き、写真セクションから同じ写真を選んでアップロードしてください"
+}
+```
+
+**エラー応答**:
+
+- 指定日のセッションがない場合は `isError: true` と「先に `log_workout` で登録してください」を返す
+- `date` の形式が不正な場合は MCP の入力バリデーションエラーを返す
+
 ### create_feedback
 
 training-logger への機能要望・不具合報告・種目追加要望を GitHub issue として起票。
@@ -512,7 +561,7 @@ training-logger への機能要望・不具合報告・種目追加要望を Git
 
 ### ツール設計と責務の分離
 
-LLM のツール選択精度はツール数が増加するほど低下する。そのため本サーバではツールを必要最小限の 9 ツール（記録系 6 + Atlas 筋肉管理 2 + 機能リクエスト 1）に整理している。日常的な筋トレ記録の CRUD（検索・登録・記録・更新・削除・照会）と Atlas 筋肉割当、およびスキーマで表現できない要望の issue 起票に絞り、明確な責務分離を行っている。
+LLM のツール選択精度はツール数が増加するほど低下する。そのため本サーバではツールを必要最小限の 10 ツール（記録系 6 + セッション写真 1 + Atlas 筋肉管理 2 + 機能リクエスト 1）に整理している。日常的な筋トレ記録の CRUD（検索・登録・記録・更新・削除・照会）、登録後の写真アップロード画面の案内、Atlas 筋肉割当、およびスキーマで表現できない要望の issue 起票に絞り、明確な責務分離を行っている。
 
 ### 説明文の書き方
 
@@ -532,7 +581,7 @@ LLM のツール選択精度はツール数が増加するほど低下する。�
 
 1. **種目の登録** -- 新規登録前に `search_exercises` で日本語名・英語名の両方を検索して重複確認
 2. **日時の扱い** -- すべて Asia/Tokyo。`date` 省略時は JST の今日。相対表現も JST で解釈
-3. **記録の運用** -- 同日の `log_workout` 再呼び出しは追記。修正は `update_workout`、削除は `delete_workout`。ノート画像からの登録は、不明点を確認し下書きをユーザーに見せて承認を得てから `log_workout` を呼ぶ（詳細な手順は Skill `log-workout` を参照）
+3. **記録の運用** -- 同日の `log_workout` 再呼び出しは追記。修正は `update_workout`、削除は `delete_workout`。ノート画像からの登録は、不明点を確認し下書きをユーザーに見せて承認を得てから `log_workout` を呼ぶ。ノート写真を保存したい場合は `log_workout` の後に `create_photo_upload_link` でリンクを案内する（画像本体は MCP では送れない。詳細な手順は Skill `log-workout` を参照）
 4. **対応できない入力** -- スキーマで表現できない項目・単位に遭遇したらユーザーに伝え、同意を得て `create_feedback` で issue を起票する
 5. **手書きノートの速記法** -- 「reps/weight」形式（例「20/10」= 20 回・重量 10）。複数並ぶ場合は各々を独立したセットとして扱う。単位不明なら `get_history` で前回を参照するかユーザーに確認
 
@@ -548,7 +597,17 @@ MCP エンドポイント URL:
 https://training-logger.discord.jp/mcp
 ```
 
-カスタムドメインを設定済み。`*.workers.dev` の URL（`https://<worker>.<account>.workers.dev/mcp`）も引き続き有効。
+カスタムドメインを設定済み。写真を保存する場合は、どの MCP クライアントでも記録後に `create_photo_upload_link` が返す URL をブラウザで開いてアップロードする。画像本体は MCP 経由では送信しない。
+
+`POST /mcp` は JSON-RPC とツール結果だけを扱い、保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。
+
+### セキュリティ境界
+
+`/mcp` は現在認証なしで公開しているが、写真本体を書き込むツールは提供しない。写真の保存は Access 保護下のブラウザ用 REST API だけで行う。
+
+一方、ブラウザ経由の `POST /api/sessions/:id/photos` と `DELETE /api/sessions/:id/photos/:photoId` は `requireAccessUser` による Fetch Metadata の CSRF 検査と Cloudflare Access JWT 検証で保護する。Zero Trust では custom domain の `/mcp` だけを Bypass とし、`/sessions/*` と `/api/*` は Allow ポリシー配下に置く。Skill の公開配布 URL が必要な場合は `/skills/*` も限定的に Bypass できる。
+
+`wrangler.jsonc` は `workers_dev: false` に設定済みであり、`*.workers.dev` URL は無効である。公開経路は Access を設定した custom domain のみとする。設定方法は [deployment.md](./deployment.md) を参照。
 
 ### ChatGPT
 
@@ -564,6 +623,7 @@ https://training-logger.discord.jp/mcp
 - 書き込みツール（`log_workout`, `update_workout`, `delete_workout`, `register_exercise`）は通常チャットで利用可能（実行前に確認あり）
 - Deep Research モードでは read-only（`search_exercises`, `get_history` のみ利用可能）
 - モバイルアプリからの MCP コネクタ利用は非対応
+- 添付画像の保存には `create_photo_upload_link` の URL をブラウザで開き、同じ画像を選択する
 
 ### claude.ai
 
@@ -576,6 +636,7 @@ https://training-logger.discord.jp/mcp
 **注意事項**:
 
 - Free プランでもカスタムコネクタを 1 個まで登録可能
+- 添付画像の保存には `create_photo_upload_link` の URL をブラウザで開き、同じ画像を選択する
 
 ### Claude Desktop
 
@@ -585,6 +646,8 @@ https://training-logger.discord.jp/mcp
 
 1. Claude Desktop の Settings -> **Connectors** を開く
 2. エンドポイント URL をカスタムコネクタとして登録する
+
+添付画像の保存は `create_photo_upload_link` が返す URL をブラウザで開き、同じ画像を選択して行う。
 
 #### 方法 B: mcp-remote ブリッジ
 
@@ -738,7 +801,30 @@ https://training-logger.discord.jp/mcp
 **LLM の応答**:
 > 8/16 の記録を登録しました! 9種目の実施記録（ウォーキング2回を含む）、計16セットを記録しています。レッグレイズは計画2セットに対して実績3セットも記録しました。
 
-### 例 4: スキーマで表現できない項目の要望起票（create_feedback）
+### 例 4: 登録に使ったノート写真の保存
+
+ワークアウト登録が完了した後に、元の写真も保存するか確認する。承認前や登録前にはアップロードを促さない。
+
+**LLM**:
+> 2026-08-16 の記録を登録しました。元の写真も保存しますか?
+
+**ユーザー**:
+> お願いします
+
+`create_photo_upload_link` を呼び出す。
+
+```json
+{
+  "date": "2026-08-16"
+}
+```
+
+**LLM の応答**:
+> [写真セクション](https://training-logger.discord.jp/sessions/42#photos)をブラウザで開き、登録に使った写真を選んでアップロードしてください。JPEG / PNG / WebP、1 枚 10 MiB 以下、1 セッション 4 枚までです。
+
+どのクライアントでも、ユーザーが保存を希望した場合に限り、返されたリンクをブラウザで開いてアップロードする。
+
+### 例 5: スキーマで表現できない項目の要望起票（create_feedback）
 
 **ユーザー**:
 > 心拍数ゾーンごとの滞在時間も記録したいんだけど、入力できる?

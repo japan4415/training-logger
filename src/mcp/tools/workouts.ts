@@ -381,7 +381,14 @@ export async function deleteWorkoutHandler(
 
 	// Delete entire session
 	if (params.delete_entire_session) {
-		await deleteSession(db, session.id);
+		try {
+			await deleteSession(env, session.id);
+		} catch (error) {
+			throw new Error(
+				"写真の削除に失敗したため、セッションは削除されませんでした。時間をおいて再試行してください。",
+				{ cause: error },
+			);
+		}
 		return { deleted: "session", date: params.date };
 	}
 

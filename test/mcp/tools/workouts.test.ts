@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { findExerciseByName } from "../../../src/db/exercises.js";
+import { storeSessionPhoto } from "../../../src/db/session-photos.js";
 import { getSessionByDate } from "../../../src/db/sessions.js";
 import {
 	deleteWorkoutHandler,
@@ -548,6 +549,62 @@ describe("workout tools", () => {
 
 			const session = await getSessionByDate(env.DB, "2026-08-15");
 			expect(session).toBeNull();
+		});
+
+		it("should delete linked R2 photos through delete_workout", async () => {
+			await logWorkoutHandler(env, {
+				date: "2026-08-15",
+				exercises: [{ name: "ベンチプレス", sets: [{ reps: 10 }] }],
+			});
+			const session = await getSessionByDate(env.DB, "2026-08-15");
+			if (!session) throw new Error("session not found");
+			const stored = await storeSessionPhoto(
+				env,
+				session,
+				new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+			);
+			if (!stored.ok) throw new Error(stored.error);
+
+			await deleteWorkoutHandler(env, {
+				date: "2026-08-15",
+				delete_entire_session: true,
+			});
+
+			expect(await env.PHOTOS.get(stored.photo.r2_key)).toBeNull();
+		});
+
+		it("reports an actionable error when R2 photo deletion fails", async () => {
+			await logWorkoutHandler(env, {
+				date: "2026-08-15",
+				exercises: [{ name: "ベンチプレス", sets: [{ reps: 10 }] }],
+			});
+			const session = await getSessionByDate(env.DB, "2026-08-15");
+			if (!session) throw new Error("session not found");
+			const stored = await storeSessionPhoto(
+				env,
+				session,
+				new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+			);
+			if (!stored.ok) throw new Error(stored.error);
+			const failingPhotos = {
+				delete() {
+					throw new Error("injected R2 delete failure");
+				},
+			} as unknown as R2Bucket;
+
+			await expect(
+				deleteWorkoutHandler(
+					{ ...env, PHOTOS: failingPhotos },
+					{
+						date: "2026-08-15",
+						delete_entire_session: true,
+					},
+				),
+			).rejects.toThrow(
+				"写真の削除に失敗したため、セッションは削除されませんでした",
+			);
+			expect(await getSessionByDate(env.DB, "2026-08-15")).not.toBeNull();
+			await env.PHOTOS.delete(stored.photo.r2_key);
 		});
 
 		it("should delete specific exercise by name", async () => {

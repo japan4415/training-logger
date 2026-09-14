@@ -3,6 +3,7 @@ import type { Bindings } from "../env.js";
 import { registerExerciseTools } from "./tools/exercises.js";
 import { registerFeedbackTools } from "./tools/feedback.js";
 import { registerHistoryTools } from "./tools/history.js";
+import { registerPhotoTools } from "./tools/photos.js";
 import { registerWorkoutTools } from "./tools/workouts.js";
 
 /**
@@ -22,7 +23,7 @@ const SERVER_INSTRUCTIONS = `\
 すべて Asia/Tokyo です。date 省略時は JST の今日が使われます。相対表現も JST で解釈してください。
 
 ■ 記録の運用
-同日の log_workout 再呼び出しは追記です。修正は update_workout、削除は delete_workout を使ってください。ノート画像からの登録は、不明点を確認し下書きをユーザーに見せて承認を得てから log_workout を呼んでください（詳細な手順は Skill log-workout を参照）。
+同日の log_workout 再呼び出しは追記です。修正は update_workout、削除は delete_workout を使ってください。ノート画像からの登録は、不明点を確認し下書きをユーザーに見せて承認を得てから log_workout を呼んでください（詳細な手順は Skill log-workout を参照）。ノート写真を保存したい場合は log_workout の後に create_photo_upload_link でリンクを案内し、どのクライアントでもリンクをブラウザで開いてアップロードしてください（画像本体は MCP では送れません）。
 
 ■ 対応できない入力
 ツールのスキーマで表現できない項目・単位に遭遇したらユーザーに伝え、同意を得て create_feedback で issue を起票してください。
@@ -51,6 +52,7 @@ export function createMcpServer(env: Bindings): McpServer {
 	registerExerciseTools(server, env);
 	registerWorkoutTools(server, env);
 	registerHistoryTools(server, env);
+	registerPhotoTools(server, env);
 	registerFeedbackTools(server, env);
 
 	return server;

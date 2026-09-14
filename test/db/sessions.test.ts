@@ -153,7 +153,7 @@ describe("sessions", () => {
 			const { session } = await getOrCreateSession(env.DB, {
 				sessionDate: "2026-08-15",
 			});
-			const deleted = await deleteSession(env.DB, session.id);
+			const deleted = await deleteSession(env, session.id);
 			expect(deleted).toBe(true);
 
 			const found = await getSessionById(env.DB, session.id);
@@ -161,7 +161,7 @@ describe("sessions", () => {
 		});
 
 		it("should return false for non-existent session", async () => {
-			const deleted = await deleteSession(env.DB, 9999);
+			const deleted = await deleteSession(env, 9999);
 			expect(deleted).toBe(false);
 		});
 	});

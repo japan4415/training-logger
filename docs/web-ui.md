@@ -2,7 +2,7 @@
 
 ## 設計方針
 
-- **読み取り専用**: Web UI はデータの閲覧のみを提供する。編集・削除操作は MCP ツール経由（ChatGPT / claude.ai とのチャット）で行う。Web UI に編集ボタンや削除ボタンは設けない。将来、Web UI からの編集が必要になった場合は PATCH/DELETE API と CSRF 保護を追加して対応する
+- **原則読み取り専用**: ワークアウト内容の編集・削除は MCP ツール経由（ChatGPT / claude.ai とのチャット）で行い、Web UI に編集ボタンは設けない。例外として、登録済みセッションへの写真の追加・削除だけを Web UI から提供する
 - **モバイルファースト**: ジムでスマートフォンから閲覧する想定。375px 幅で崩れないレイアウトを最優先とする
 - **SSR + 部分更新**: Hono JSX による Server-Side Rendering を基本とし、htmx でページ遷移なしの部分更新を実現する
 - **Chart.js は CDN**: Chart.js は CDN から読み込み、バンドルに含めない。`public/js/chart-init.js` が SSR 埋め込みの JSON データを読み取り描画する
@@ -63,6 +63,11 @@
   - 計画がある種目は計画 vs 実績の対比表示
   - フォームキュー（`form_cues`）はツールチップで表示
 - 前/次セッションへのナビゲーション
+- 写真セクション: 種目一覧の後、戻るリンクの前に `<details class="session-photos" id="photos">` を配置する
+  - 初期状態は閉じ、`<summary>写真 (N)</summary>` に D1 のメタデータ件数だけを表示する
+  - 開いたときだけ htmx で `GET /sessions/:id/photos` を 1 回呼び、サムネイル一覧・削除ボタン・アップロードフォームの断片 HTML を取得する
+  - 初期 HTML には `<img>` を含めず、取得後のサムネイルは `loading="lazy"` とする
+  - ファイル入力は JPEG / PNG / WebP の複数選択に対応し、1 枚ずつ順番に送信する
 
 **ワイヤーフレーム**:
 
@@ -89,6 +94,7 @@
 │ │ ✓ ウォーキング               │ │
 │ │   10分 / 傾斜0.5% / 3.5km/h  │ │
 │ └──────────────────────────────┘ │
+│ ▸ 写真 (2)                      │
 └──────────────────────────────────┘
 ```
 
@@ -176,12 +182,16 @@
 
 ## REST API エンドポイント
 
-Web UI が使用する REST API の一覧。全エンドポイントは読み取り専用（GET のみ）。
+Web UI が使用する REST API の一覧。ワークアウトデータは読み取り専用で、写真だけ追加・削除できる。
 
 | パス | メソッド | 説明 | クエリパラメータ | レスポンス概形 |
 |------|----------|------|------------------|----------------|
 | `/api/sessions` | GET | セッション一覧 | `month` (YYYY-MM), `limit`, `offset` | `{sessions: [{id, date, goal, exercise_count, exercise_names[]}], total}` |
 | `/api/sessions/:id` | GET | セッション詳細 | -- | `{session: {id, date, goal, body_condition, notes, target_muscles_summary[], exercises: [{id, exercise_id, name, status, equipment_note, form_cues, target_muscles, sets[], planned_sets[]}]}}` |
+| `/api/sessions/:id/photos` | GET | 写真メタデータ一覧 | -- | `{photos: [{id, content_type, size_bytes, created_at, url}]}` |
+| `/api/sessions/:id/photos/:photoId` | GET | R2 の画像本体をストリーミング | -- | 画像本体（`private, no-store`, `nosniff`, inline） |
+| `/api/sessions/:id/photos` | POST | 写真を 1 枚追加 | multipart `photo` | 201 `{photo: {...}}`、400/401/403/404/409 |
+| `/api/sessions/:id/photos/:photoId` | DELETE | 写真を削除 | -- | 204、401/403/404 |
 | `/api/exercises` | GET | 種目一覧 | `category`, `q` | `{exercises: [{id, name, category, equipment, target_muscles, last_performed, total_sessions}]}` |
 | `/api/exercises/:id` | GET | 種目詳細 | -- | `{exercise: {id, name, category, equipment, target_muscles, aliases[]}}` |
 | `/api/exercises/:id/stats` | GET | 種目別統計 | `from`, `to`, `period` (1m/3m/6m/all) | `{stats: [{date, max_weight_by_unit, total_reps, total_sets, sets[]}]}` |
@@ -237,6 +247,22 @@ htmx を使い、ページ全体の再読み込みなしで部分更新を行う
 
 htmx のリクエストには `HX-Request` ヘッダーが付与される。サーバ側ではこのヘッダーを検出し、部分 HTML（レイアウトなし）を返すか、フルページ HTML を返すかを切り替える。
 
+写真セクションは `toggle once` 相当のトリガーで、閉じたままならネットワークアクセスしない。`#photos` 付き URL で到着した場合は DOM 初期化後に details を自動で開き、`toggle once` を発火させて断片を取得する。開いたときの `GET /sessions/:id/photos` は `HX-Request` 付きなら共通 Layout のない断片だけを返す。断片内のサムネイルは次の形とし、画像本体もブラウザが必要になった時点で取得する。
+
+```html
+<img loading="lazy"
+     src="/api/sessions/42/photos/550e8400-e29b-41d4-a716-446655440000"
+     alt="セッション写真 1 / 2">
+```
+
+### 写真アップロードと認可
+
+`public/js/session-photos.js` は初期化時にファイル入力へ `multiple` を付与し、複数選択されたファイルを 1 枚ずつ `FormData` の `photo` フィールドに入れ、`fetch` で `POST /api/sessions/:id/photos` へ送る。JavaScript 無効時は 1 枚だけをネイティブ送信し、成功時は `303` でセッション詳細の `#photos` へ戻る。`credentials: "same-origin"` を指定して Cloudflare Access の `CF_Authorization` cookie を送り、各ファイルの進捗を表示する。成功後は写真断片を再取得して件数と一覧を更新する。
+
+エラーは `unsupported_type`、`too_large`、`limit_exceeded`、401（Access 未認証または未設定）をユーザー向けの文言に変換して表示する。逐次アップロードの途中で失敗した場合も、1 件以上成功済みなら断片を再取得し、「N件成功、M件目（ファイル名）失敗」を `aria-live` に表示して入力をクリアする。4 枚到達時はアップロードフォームを表示せず、削除が必要な恒久案内と一時的な live status を別要素で表示する。断片更新後は、アップロード時は入力（上限到達時は写真 details の summary）、削除時は次の削除ボタンまたは summary へフォーカスを移す。削除確認はラベル付き `fieldset` とし、確定後は確認・キャンセルの両ボタンを無効化して「削除中…」を表示する。写真セクションの変更操作は直列化し、アップロード中は全削除操作、削除中はアップロードと他の削除操作を無効化する。操作はキーボードだけでも実行でき、進捗表示の動きは `prefers-reduced-motion` を尊重する。
+
+写真 API の GET / POST / DELETE は Access JWT 検証を通す。POST / DELETE だけは加えて `Sec-Fetch-Site` を検査し、`same-origin` / `none` 以外、またはヘッダー自体がないリクエストを 403 `csrf_forbidden` とする。Access JWT がない・無効なら 401、Access 環境変数が未設定なら読み書きとも fail-closed で 401 `access_not_configured` とする。JWT は `Cf-Access-Jwt-Assertion` ヘッダー、なければ `CF_Authorization` cookie から取得し、Access JWKS による RS256 署名、`aud`、`exp` を検証する。ローカル開発では request Host が `localhost` / `127.0.0.1` の場合だけ `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` で認証を省略できる。
+
 ### Chart.js 初期化
 
 Chart.js はバンドルに含めず CDN から読み込む。データの受け渡しは SSR 埋め込み方式:
@@ -268,6 +294,9 @@ Chart.js はバンドルに含めず CDN から読み込む。データの受け
 
 - `/css/style.css` -- スタイルシート（モバイルファースト設計）
 - `/js/chart-init.js` -- Chart.js 初期化スクリプト
+- `/js/session-photos.js` -- 写真の逐次アップロード・削除・断片更新
+
+写真グリッドは既存の `--label`、`--bg-tertiary`、`--separator`、`--accent`、`--radius-card`、`--shadow` トークンを使い、375px 幅では 2 列にする。ダークモードでも同じセマンティックトークンを利用する。
 
 ## Human Atlas による対象筋の立体表示
 

@@ -3,7 +3,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
+  "workers_dev": false,
   "routes": [
     {
       "pattern": "training-logger.discord.jp",
@@ -17,6 +17,12 @@
       "database_name": "training-logger-db",
       "database_id": "fed11dc7-680c-4245-a3db-95e73f4ddebe",
       "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "training-logger-photos"
     }
   ],
   // Observability: console.log/error の出力とリクエストトレースを有効化
