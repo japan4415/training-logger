@@ -3,9 +3,11 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
 	listSessionPhotos,
 	PHOTO_MAX_BASE64_CHARS,
+	PHOTO_MAX_BYTES,
 } from "../../src/db/session-photos.js";
 import { getOrCreateSession } from "../../src/db/sessions.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
+import { photoBase64, photoBytes } from "../fixtures/photos.js";
 
 const PNG_BASE64 = "iVBORw0KGgo=";
 
@@ -219,6 +221,54 @@ describe("MCP handler", () => {
 			});
 			expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
 		});
+
+		it.each([392908, 382181, 918483, 789743, 912749, 820855, PHOTO_MAX_BYTES])(
+			"stores %i bytes through JSON-RPC and R2 without altering the photo",
+			async (size) => {
+				const { session } = await getOrCreateSession(env.DB, {
+					sessionDate: "2026-09-14",
+				});
+				const bytes = photoBytes(size);
+				const response = await SELF.fetch("http://localhost/mcp", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json, text/event-stream",
+					},
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id: 6,
+						method: "tools/call",
+						params: {
+							name: "upload_session_photo",
+							arguments: {
+								date: "2026-09-14",
+								data_base64: photoBase64(bytes),
+							},
+						},
+					}),
+				});
+				expect(response.status).toBe(200);
+				const data = (await response.json()) as {
+					result: { content: Array<{ text: string }>; isError?: boolean };
+				};
+				expect(data.result.isError).toBeUndefined();
+				expect(JSON.parse(data.result.content[0].text)).toMatchObject({
+					session_id: session.id,
+					size_bytes: size,
+					content_type: "image/jpeg",
+				});
+				const photos = await listSessionPhotos(env.DB, session.id);
+				expect(photos).toHaveLength(1);
+				const object = await env.PHOTOS.get(photos[0].r2_key);
+				expect(object).not.toBeNull();
+				if (!object) throw new Error("Stored photo was not found in R2");
+				const storedBytes = await object.arrayBuffer();
+				expect(await crypto.subtle.digest("SHA-256", storedBytes)).toEqual(
+					await crypto.subtle.digest("SHA-256", bytes),
+				);
+			},
+		);
 
 		it("tools/call returns invalid_base64 when data exceeds the character limit", async () => {
 			await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });

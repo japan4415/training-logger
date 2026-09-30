@@ -8,9 +8,11 @@ import {
 import { getOrCreateSession } from "../../../src/db/sessions.js";
 import {
 	createPhotoUploadLinkHandler,
+	decodeBase64Strict,
 	uploadSessionPhotoHandler,
 } from "../../../src/mcp/tools/photos.js";
 import { applyMigrations, cleanDatabase } from "../../db/test-helpers.js";
+import { photoBase64 } from "../../fixtures/photos.js";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
@@ -71,13 +73,31 @@ describe("MCP photo tools", () => {
 		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
 	});
 
+	it.each([1, 2, 3, 256])(
+		"preserves all byte values and optional padding for %i bytes",
+		(size) => {
+			const bytes = Uint8Array.from({ length: size }, (_, index) => index);
+			const encoded = photoBase64(bytes);
+			expect(decodeBase64Strict(encoded)).toEqual(bytes);
+			expect(decodeBase64Strict(encoded.replace(/=+$/, ""))).toEqual(bytes);
+		},
+	);
+
 	it.each([
 		["invalid characters", "%%%"],
+		["empty input", ""],
+		["an incomplete quartet", "A"],
+		["missing padding", "AA="],
+		["extra padding", "AAA=="],
+		["only padding", "===="],
+		["spaces", "AA AA"],
 		["URL-safe characters", "_w=="],
 		["a newline", `${base64(PNG)}\n`],
 		["misplaced padding", "AA=A"],
 		["non-zero pad bits with =", "iVBORw0KGgp="],
 		["non-zero pad bits with ==", "iVBORw0KGh=="],
+		["non-zero pad bits without padding", "iVBORw0KGgp"],
+		["invalid trailing character in a large input", `${"A".repeat(1224643)}!`],
 		["too many characters", "A".repeat(PHOTO_MAX_BASE64_CHARS + 1)],
 	])("rejects invalid base64 containing %s", async (_case, dataBase64) => {
 		await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });

@@ -61,19 +61,18 @@ export function decodeBase64Strict(value: string): Uint8Array {
 	}
 	const unpadded = firstPadding === -1 ? value : value.slice(0, firstPadding);
 	if (unpadded.length % 4 === 1) throw new Error("Invalid base64 data");
-	const padded = unpadded.padEnd(Math.ceil(unpadded.length / 4) * 4, "=");
-	try {
-		const decoded = atob(padded);
-		const canonical = btoa(decoded);
-		if (
-			(firstPadding === -1 ? canonical.replace(/=+$/, "") : canonical) !== value
-		) {
-			throw new Error("Invalid base64 data");
-		}
-		return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
-	} catch {
+	// nodejs_compat provides a native decoder. Avoid a binary string plus one
+	// JavaScript callback per byte, which becomes costly for multi-MiB photos.
+	const decoded = Buffer.from(value, "base64");
+	const canonical = decoded.toString("base64");
+	// Buffer's decoder is lenient, so retain all strict alphabet/padding checks
+	// above and the round-trip check for non-zero unused pad bits.
+	if (
+		(firstPadding === -1 ? canonical.replace(/=+$/, "") : canonical) !== value
+	) {
 		throw new Error("Invalid base64 data");
 	}
+	return new Uint8Array(decoded.buffer, decoded.byteOffset, decoded.byteLength);
 }
 
 export async function uploadSessionPhotoHandler(
