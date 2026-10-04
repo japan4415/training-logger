@@ -29,7 +29,7 @@
     {
       "binding": "DB",
       "database_name": "training-logger-db",
-      "database_id": "<production-db-id>",
+      "database_id": "fed11dc7-680c-4245-a3db-95e73f4ddebe",
       "migrations_dir": "migrations"
     }
   ],
@@ -61,7 +61,7 @@
 wrangler d1 create training-logger-db
 ```
 
-出力される `database_id` を `wrangler.jsonc` の `<production-db-id>` に反映する。
+出力される `database_id` を `wrangler.jsonc` の `d1_databases[].database_id` に反映する。本番環境では上記コードブロックの `fed11dc7-680c-4245-a3db-95e73f4ddebe` を設定済み。
 
 ### 2. R2 バケットの作成
 
@@ -116,7 +116,7 @@ pnpm exec wrangler secret put ACCESS_TEAM_DOMAIN
 pnpm exec wrangler secret put ACCESS_AUD
 ```
 
-どちらか一方でも未設定なら写真 API は読み書きとも 401 `access_not_configured` で fail-closed になる。
+どちらか一方でも未設定なら写真 API は読み書きとも 401 `access_not_configured` で fail-closed になる。ただし書き込み（POST / DELETE）は認証前に `Sec-Fetch-Site` を検査するため、ヘッダーが無い、または `same-origin` / `none` 以外の場合は設定の有無にかかわらず 403 `csrf_forbidden` を返す。
 
 ### 6. デプロイ
 
@@ -141,7 +141,7 @@ pnpm exec wrangler deploy
 本番環境（production）のみ運用する。個人利用のため preview 環境を設ける利益が薄い。
 
 - **本番**: `wrangler deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `wrangler secret put` で設定
-- **ローカル開発**: `wrangler dev` で起動。D1 と R2 binding はローカルでエミュレートされる。マイグレーション適用は `wrangler d1 migrations apply training-logger-db --local`。写真 API の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定できるが、このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。写真の書き込みリクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
+- **ローカル開発**: `wrangler dev` で起動。D1 と R2 binding はローカルでエミュレートされる。マイグレーション適用は `pnpm exec wrangler d1 migrations apply training-logger-db --local`。写真 API の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定できるが、このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。写真の書き込みリクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
 
 ## CI/CD
 
@@ -165,7 +165,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 

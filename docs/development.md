@@ -5,8 +5,8 @@
 ### 前提条件
 
 - Node.js 22+
-- pnpm
-- wrangler（`pnpm` 経由でプロジェクトローカルにインストールされる）
+- pnpm（`corepack enable` で有効化。本リポジトリは `packageManager: pnpm@10.34.6` を指定しており corepack が該当版を取得する）
+- wrangler（`pnpm` 経由でプロジェクトローカルにインストールされる。コマンドは `pnpm exec wrangler` で固定版を使う）
 
 ### セットアップ
 
@@ -14,11 +14,11 @@
 git clone https://github.com/japan4415/training-logger.git
 cd training-logger
 pnpm install
-wrangler d1 migrations apply training-logger-db --local
+pnpm exec wrangler d1 migrations apply training-logger-db --local
 pnpm run dev
 ```
 
-`pnpm run dev` は `wrangler dev` を実行し、ローカル D1 を使った開発サーバを起動する。
+`pnpm run dev` は `wrangler dev` を実行し、ローカル D1 を使った開発サーバを起動する。既定では http://localhost:8787 で待ち受ける。`create_feedback`（`GITHUB_TOKEN`）や写真 API をローカルで検証する場合は、任意で `cp .dev.vars.example .dev.vars` を用意する（起動自体には不要）。マイグレーションは dev 起動前に適用する（先に dev を起動すると空の DB になる）。
 
 ### package.json scripts
 
@@ -29,6 +29,7 @@ pnpm run dev
 | `typecheck` | `tsc --noEmit` | TypeScript 型チェック |
 | `lint` | `biome check .` | Biome による lint チェック |
 | `format` | `biome format --write .` | Biome によるフォーマット |
+| `build:skill` | `node scripts/build-skill.mjs` | Skill 配布物（`public/skills/`）の生成 |
 | `test` | `vitest run` | テストの実行 |
 
 ## Issue 駆動開発
@@ -73,7 +74,7 @@ Issue の記述は、**別セッションの Claude Code（別モデル）が Is
 
 ## Issue 記述規約
 
-以下のテンプレートを使って Issue を記述する。将来 `.github/ISSUE_TEMPLATE/` にも配置予定。
+以下のテンプレートを使って Issue を記述する。`.github/ISSUE_TEMPLATE/feature-request.md` に配置済み。
 
 ```markdown
 ## 背景

@@ -25,6 +25,8 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 - `tools/list` -- 利用可能なツール一覧の返却
 - `tools/call` -- ツールの実行
 
+このほか SDK が `notifications/initialized` や `ping` などにも応答する。ここでは業務上重要な 3 メソッドを示す。
+
 **GET リクエストには 405 Method Not Allowed を返す**。本サーバは SSE ストリームを提供しないステートレス実装であり、Streamable HTTP 仕様に基づきサーバは GET に対して 405 を返してよい。
 
 ## ツール定義
@@ -62,8 +64,11 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **挙動**:
 
-1. `exercises` テーブルと `exercise_aliases` テーブルを JOIN し、`query` を LIKE で部分一致検索する
-2. `category` が指定されていれば AND 条件で絞り込む
+1. `query` を次の 3 段階で解決する（前段でヒットしたらそこで確定し、部分一致へは進まない）:
+   1. `exercises.name` の完全一致 (COLLATE NOCASE)
+   2. `exercise_aliases.alias` の完全一致 (COLLATE NOCASE)
+   3. `exercises.name` / `exercise_aliases.alias` の LIKE 部分一致
+2. `category` が指定されていれば結果を AND 条件で絞り込む
 3. 結果を以下の形式で返す:
 
 ```json
@@ -75,6 +80,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
       "category": "strength",
       "equipment": "カイザー空圧マシン",
       "target_muscles": null,
+      "atlas_muscles": { "primary": ["FJ1447", "FJ1447M"], "secondary": [], "unavailable": [] },
       "aliases": ["Keiser Chest Press", "カイザーCP"]
     }
   ]
@@ -117,6 +123,10 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
       "type": "string",
       "description": "対象部位"
     },
+    "atlas_muscles": {
+      "type": ["object", "null"],
+      "description": "Atlas 筋肉の割当。{primary: string[], secondary: string[], unavailable: string[]}。省略時は既知の種目名から既定割当、null は従来の部位メモ表示"
+    },
     "aliases": {
       "type": "array",
       "items": { "type": "string" },
@@ -130,8 +140,9 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 **挙動**:
 
 1. `exercises` テーブルに INSERT する
-2. `aliases` が指定されていれば `exercise_aliases` テーブルにも INSERT する
-3. 登録した種目の情報を返す
+2. `atlas_muscles` が省略された場合は既知の種目名に対する既定割当を設定し、明示的な `null` は NULL のまま（従来の部位メモ表示）、指定された値は検証して保存する
+3. `aliases` が指定されていれば `exercise_aliases` テーブルにも INSERT する
+4. 登録した種目の情報を返す（デコード済み `atlas_muscles` を含む）
 
 **エラー応答**:
 
@@ -170,7 +181,8 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
     },
     "exercises": {
       "type": "array",
-      "description": "種目とセット情報の配列",
+      "minItems": 1,
+      "description": "種目とセット情報の配列（1 件以上）",
       "items": {
         "type": "object",
         "properties": {
@@ -269,7 +281,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **重複対策**:
 
-同日に再度呼び出された場合は既存セッションに**追記**する（上書きしない）。既存記録の修正には `update_workout` を使用する。
+同日に再度呼び出された場合、既存セッションの `goal` / `body_condition` / `session_notes` は指定された値で更新し、種目とセットは既存に**追記**する（既存の種目・セットは置き換えない）。既存記録の修正には `update_workout` を使用する。
 
 ### update_workout
 
@@ -353,9 +365,9 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **エラー応答**:
 
-- 指定した日付にセッションが存在しない -> 404 相当のエラー
-- 指定した種目名が見つからない -> 404 相当のエラー
-- 同名種目が複数あり `exercise_order` が未指定 -> 候補一覧を返して選択を促す
+- 指定した日付にセッションが存在しない -> `isError: true` のツールエラー（`error` メッセージ）
+- 指定した種目名が見つからない -> `isError: true` のツールエラー
+- 同名種目が複数あり `exercise_order` が未指定 -> `isError: true` で候補一覧を返して選択を促す
 
 ### delete_workout
 
@@ -608,6 +620,82 @@ training-logger への機能要望・不具合報告・種目追加要望を Git
 - `GITHUB_TOKEN` 未設定時: `isError: true` でエラーメッセージと手動起票用の事前入力 URL を返す
 - GitHub API エラー（401 / 403 / 422 / 5xx）: `isError: true` で HTTP ステータスコードと GitHub のエラーメッセージを含む LLM 向けメッセージを返す
 
+### list_atlas_muscles
+
+割当可能な Human Atlas の筋肉カタログ検索。
+
+**説明文** (LLM 向け):
+
+> 割当可能なHuman Atlasの筋肉ID・英語名・日本語名・部位を検索します。筋肉の登録・更新前にIDを確認してください。
+
+**入力スキーマ**:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "筋肉ID・英語名・日本語名・部位の部分一致"
+    }
+  }
+}
+```
+
+`query` は任意。`readOnlyHint: true` が付く。
+
+**挙動**:
+
+1. `query` 省略時は全筋肉を返す
+2. `id` / 英語名 / 日本語名 / 部位（groupLabel）を大文字小文字を無視した部分一致で絞り込む
+3. `{muscles: [{id, name, label, groupLabel}]}` を返す
+
+**エラー応答**:
+
+- 該当なしの場合は空配列 `{muscles: []}` を返す（エラーにしない）
+
+左右・筋頭・筋部は個別 ID である。`set_exercise_muscles` へ渡す種目 ID は `search_exercises` で取得する。
+
+### set_exercise_muscles
+
+登録済み種目の Atlas 筋肉割当の置き換え。
+
+**説明文** (LLM 向け):
+
+> 登録済み種目の主働筋・補助筋をAtlasの正確なIDで設定します。既存割当を置換します。nullで従来の部位名による表示へ戻します。
+
+**入力スキーマ**:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "exercise_id": {
+      "type": "integer",
+      "description": "種目ID（正の整数）"
+    },
+    "atlas_muscles": {
+      "type": ["object", "null"],
+      "description": "{primary: string[], secondary: string[], unavailable: string[]}。null は従来の部位メモ表示へ戻す"
+    }
+  },
+  "required": ["exercise_id", "atlas_muscles"]
+}
+```
+
+`atlas_muscles` は `primary` / `secondary` / `unavailable` の 3 キーを持つ strict な object（余分なキーは不可）。`primary` / `secondary` は配列要素あたり最大 160 文字・最大 200 件、`unavailable` は要素あたり最大 100 文字・最大 50 件。
+
+**挙動**:
+
+1. `exercise_id` は正の整数。対象種目の `atlas_muscles` 全体を指定値で置き換える
+2. カタログに無い筋肉 ID や不正な構造はエラーとし、DB を変更しない
+3. 更新後の種目情報（デコード済み `atlas_muscles` を含む）を返す
+
+**エラー応答**:
+
+- 種目が存在しない、または不明な筋肉 ID: `isError: true` のツールエラー（DB は変更しない）
+
 ## ツール設計の指針
 
 ### ツール設計と責務の分離
@@ -672,7 +760,7 @@ https://training-logger.discord.jp/mcp
 **注意事項**:
 
 - 書き込みツール（`log_workout`, `update_workout`, `delete_workout`, `register_exercise`）は通常チャットで利用可能（実行前に確認あり）
-- Deep Research モードでは read-only（`search_exercises`, `get_history` のみ利用可能）
+- Deep Research などの read-only モードで使えるツールはクライアントの判定に依存する。実装上 `readOnlyHint` を宣言しているのは `list_atlas_muscles` のみで、`search_exercises` / `get_history` には annotations が無い
 - モバイルアプリからの MCP コネクタ利用は非対応
 - 添付画像の保存には `create_photo_upload_link` の URL をブラウザで開き、同じ画像を選択する
 
@@ -915,4 +1003,4 @@ Claude Code などローカルファイルを読める環境では、ファイ�
 - `set_exercise_muscles(exercise_id: number, atlas_muscles: object | null)`: 種目の割当全体を置き換える。種目IDは正の整数。不明ID・不明筋肉IDはエラーとし、DBを変更しない。
 - `search_exercises` / `register_exercise` のレスポンスに、デコード済み `atlas_muscles` を含む。
 
-primary/secondaryはそれぞれ最大200件、unavailableは最大50件・名称100文字。primaryとsecondaryに重複するIDはprimaryを優先する。RESTの種目詳細・一覧も `atlas_muscles` を返す。セッションAPIは従来の `target_muscles_summary` に加え、完了種目の明示割当を集約した `atlas_muscles_summary` と各種目の `atlas_muscles` を返す。NULLの従来値は新しいID集約には含めない。
+primary/secondaryは配列要素あたり最大160文字・最大200件、unavailableは最大100文字・最大50件。primaryとsecondaryに重複するIDはprimaryを優先する。RESTの種目詳細・一覧も `atlas_muscles` を返す。セッションAPIは従来の `target_muscles_summary` に加え、完了種目の明示割当を集約した `atlas_muscles_summary` と各種目の `atlas_muscles` を返す。NULLの従来値は新しいID集約には含めない。
