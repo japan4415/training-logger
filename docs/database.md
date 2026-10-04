@@ -168,6 +168,8 @@ erDiagram
 
 - `idx_workout_sessions_date` -- `session_date` で範囲検索・ソート
 
+> **現状の制約**: `updated_at` は「更新日時」と定義しているが、同日再記録時にメタデータ（`goal` / `body_condition` / `notes`）を更新する `updateSession` は `updated_at` を書き換えない。DB 層で `updated_at` を更新するのは `set_exercise_muscles` による `exercises.updated_at` だけである。
+
 ### session_photos (セッション写真)
 
 ワークアウト登録に使ったノート写真のメタデータを管理する。画像本体は R2 バケット `training-logger-photos` に保存し、D1 には参照に必要な情報だけを保持する。1 セッションにつき最大 4 枚、1 枚につき最大 10 MiB というアプリケーション制約がある。
@@ -469,7 +471,7 @@ CI パイプラインでは `pnpm exec wrangler d1 migrations apply training-log
 | 13 | バタフライ | strength | NULL | NULL |
 | 14 | レッグレイズ | strength | NULL | NULL |
 
-手書きノートの表記（スポバンド肩まわし・カイザーラットプルダウン・グッドモーニングEX）は正規名の別名（`register_exercise` の `aliases`）として登録する。`src/domain/atlas-profiles.json` の初期割当は正規名で照合するため、別名のままでは既定の Atlas 割当は付かない。
+手書きノートの表記（スポバンド肩まわし・カイザーラットプルダウン・グッドモーニングEX）は正規名の別名（`register_exercise` の `aliases`）として登録する。`src/domain/atlas-profiles.json` の初期割当はプロファイルの `names` と種目の `name` だけを照合する（`exercise_aliases` は参照しない）ため、別名のままでは既定の Atlas 割当は付かない。
 
 ### 2026-08-15 のセッション
 

@@ -31,7 +31,7 @@ flowchart TD
 
 ### ステップ 1: MCP サーバを AI チャットに接続
 
-ChatGPT（Developer Mode Connector）、claude.ai（Custom Connector）、または Claude Desktop（mcp-remote ブリッジ）に本システムの MCP エンドポイントを登録する。接続先は `POST /mcp`（Streamable HTTP）。各クライアントの接続手順は [mcp-server.md](./mcp-server.md) を参照。
+ChatGPT（Developer Mode Connector）、claude.ai（Custom Connector）、または Claude Desktop（リモートコネクタ推奨、または mcp-remote ブリッジ）に本システムの MCP エンドポイントを登録する。接続先は `POST /mcp`（Streamable HTTP）。各クライアントの接続手順は [mcp-server.md](./mcp-server.md) を参照。
 
 - ChatGPT: [Developer Mode での MCP 接続](https://developers.openai.com/api/docs/mcp)（remote HTTPS 必須、認証なしモードで登録可）
 - claude.ai: [Custom Connector](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)（公開 HTTPS 必須、Free プランでも 1 個まで登録可）
@@ -93,7 +93,7 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 ### Phase 3: 運用改善
 
 - CD パイプライン（Cloudflare Workers Builds による Git 連携で merge → 自動デプロイ）
-- E2E テスト
+- E2E 検証（実データ投入と Web UI 表示確認）
 - ドキュメント追従の最終化
 
 各フェーズの詳細なタスクと優先順位は [roadmap.md](./roadmap.md) を参照。
@@ -102,7 +102,7 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 
 以下は現時点では対象外とする:
 
-- **複数ユーザー対応**: 個人利用に限定
+- **複数ユーザー対応**: 個人利用に限定（ログイン機構は GitHub issue [#66](https://github.com/japan4415/training-logger/issues/66) で検討中）
 - **食事記録**: トレーニング記録に集中する
 - **ネイティブアプリ**: Web UI + AI チャットで十分
 

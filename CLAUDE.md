@@ -22,7 +22,7 @@ pnpm run dev                                        # ローカル開発サー�
 pnpm run typecheck                                  # TypeScript 型チェック
 pnpm run lint                                       # Biome lint
 pnpm run test                                       # Vitest テスト実行
-wrangler d1 migrations apply training-logger-db --local  # ローカル D1 マイグレーション
+pnpm exec wrangler d1 migrations apply training-logger-db --local  # ローカル D1 マイグレーション
 ```
 
 ## 規約

@@ -6,21 +6,23 @@
 
 実装完了。`https://training-logger.discord.jp` で本番運用中。改善は [GitHub issue 駆動](https://github.com/japan4415/training-logger/issues) で継続する。
 
+> **Cloudflare Access（任意）**: Access を設定すると `/sessions/*` と `/api/*` を保護できる推奨構成。ブラウザからの写真の表示・追加は Access の設定を前提とする。有効化手順は [docs/deployment.md](docs/deployment.md) の手順 5 を参照。
+
 ## 特徴
 
 - **AI チャットから記録**: ChatGPT・Claude に話しかけるだけで筋トレを記録（MCP 接続）
 - **ノート写真も OK**: 手書きノートの写真を送れば LLM が読み取って構造化・登録（Claude 向け登録手順 Skill も提供）
-- **元の写真も保存**: 登録に使ったノート写真を R2 に保存し、セッション詳細から振り返り可能
+- **元の写真も保存**: 登録に使ったノート写真を R2 に保存し、セッション詳細から振り返り可能（Cloudflare Access の設定が前提）
 - **Web で振り返り**: 過去の記録をブラウザで閲覧。種目別の推移をチャートで確認し、鍛えた部位を人体（Human Atlas）の 3D 表示で可視化
 - **チャットから改善要望**: 「こんな機能がほしい」と言えば `create_feedback` で GitHub issue を起票（`GITHUB_TOKEN` 設定時は自動起票、未設定時は手動起票用 URL を案内）。アプリ自体が進化する
-- **Cloudflare 無料枠で運用**: Workers + D1 + R2 + Access。個人利用なら完全無料
+- **Cloudflare 無料枠で運用**: Workers + D1 + R2（+ 任意で Access）。個人利用なら完全無料
 
 ## アーキテクチャ概要
 
 ```mermaid
 graph LR
     A["ChatGPT / Claude"] -->|MCP| B["Cloudflare Worker"]
-    C["ブラウザ"] -->|HTTPS| D["Cloudflare Access"]
+    C["ブラウザ"] -->|HTTPS| D["Cloudflare Access<br/>(任意)"]
     D --> B
     B --> E["D1 Database"]
     B --> G["R2<br/>training-logger-photos"]
@@ -46,8 +48,8 @@ graph LR
 
 ### 前提条件
 
-- Node.js 22 以上（`node -v`）
-- pnpm（`corepack enable` で有効化。本リポジトリは `packageManager: pnpm@10.34.6` を指定しており corepack が該当版を自動取得する）
+- Node.js 22 または 24 LTS（CI は 22。`node -v`）
+- pnpm（`corepack enable` で有効化。本リポジトリは `packageManager: pnpm@10.34.6` を指定しており corepack が該当版を自動取得する。corepack が同梱されない Node.js 25 以降では `npm install -g corepack` を先に実行する）
 
 ### 手順
 
@@ -67,6 +69,11 @@ pnpm run dev
 cp .dev.vars.example .dev.vars
 ```
 
+コピー後に必要な編集:
+
+- `create_feedback` を試す場合、`GITHUB_TOKEN=github_pat_xxx` のプレースホルダ行は truthy のためそのままでは GitHub API が 401 になる。実際の fine-grained PAT（`Issues: Read and write`）に置き換えると `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` の先へ実際に起票される（既定は本番リポジトリ。試さない場合は行を削除すると手動起票 URL の案内にフォールバックする）
+- 写真 API を試す場合は `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` のコメントを外す（localhost / 127.0.0.1 のときだけ有効）
+
 ### 動作確認
 
 別ターミナルで:
@@ -82,6 +89,7 @@ curl -s -X POST http://localhost:8787/mcp \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.1"}}}'
 ```
+> 期待出力: `result.protocolVersion: "2025-06-18"`、`result.serverInfo.name: "training-logger"`。
 
 > ローカル D1 は空のため `/api/exercises` は `[]`、`/exercises/:id` は 404 を返す。本番 DB のデータはローカルへ同期されない。
 

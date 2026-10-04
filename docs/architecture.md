@@ -10,7 +10,7 @@
 | フレームワーク | Hono v4.x | MCP / REST / SSR / 静的配信を単一 Worker で統合 |
 | データベース | Cloudflare D1 | エッジ SQLite。[無料枠](https://developers.cloudflare.com/d1/platform/pricing/): 5GB / 読み 500万行/日 / 書き 10万行/日 |
 | オブジェクトストレージ | Cloudflare R2 | `training-logger-photos` に `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` 形式でセッション写真を保存。D1 はメタデータだけを保持 |
-| ブラウザ認証 | Cloudflare Access | custom domain のセッション画面と写真書き込み API を保護 |
+| ブラウザ認証 | Cloudflare Access | custom domain のセッション画面と写真 API（読み書き）を保護する任意の推奨構成 |
 | 静的配信 | Workers Assets | `wrangler.jsonc` の `assets.directory` で設定。[2026年現在 Pages より Workers + Assets が Cloudflare 推奨](https://developers.cloudflare.com/workers/static-assets/) |
 | MCP SDK | `@modelcontextprotocol/sdk` v1.30.x (stable) | `McpServer` + `registerTool` + Zod でツール定義 |
 | MCP トランスポート | Streamable HTTP（ステートレス） | Hono ルートとして実装 |
@@ -43,12 +43,12 @@ graph TB
     subgraph Clients
         ChatGPT["ChatGPT<br/>(Developer Mode Connector)"]
         ClaudeAI["claude.ai<br/>(Custom Connector)"]
-        ClaudeDesktop["Claude Desktop<br/>(mcp-remote)"]
+        ClaudeDesktop["Claude Desktop<br/>(Connector / mcp-remote)"]
         Browser["ブラウザ"]
     end
 
     subgraph Cloudflare
-        Access["Cloudflare Access<br/>/sessions/* /api/*"]
+        Access["Cloudflare Access<br/>(任意)"]
         subgraph Worker["Cloudflare Worker: training-logger"]
             HonoApp["Hono App"]
             MCP["MCP Handler<br/>POST /mcp"]
@@ -91,9 +91,11 @@ graph TB
 
 ### Cloudflare Access の保護範囲
 
-custom domain では `/sessions/*` と `/api/*` を Cloudflare Access の Allow ポリシーで保護する。`/mcp` は ChatGPT / Claude の認証なしコネクタから到達できるよう Bypass とし、配布物を直接取得させる場合だけ `/skills/*` も Bypass の候補とする。アプリケーション内でも写真の GET / POST / DELETE は Access JWT を検証し、POST / DELETE は加えて Fetch Metadata を検証するが、`/mcp` 自体は認証しない。
+custom domain に Cloudflare Access を設定すると、`/sessions/*` と `/api/*` を Allow ポリシーで保護できる。`/mcp` は ChatGPT / Claude の認証なしコネクタから到達できるよう Bypass とし、配布物を直接取得させる場合だけ `/skills/*` も Bypass の候補とする。アプリケーション内でも写真の GET / POST / DELETE は Access JWT を検証し、POST / DELETE は加えて Fetch Metadata を検証するが、`/mcp` 自体は認証しない。
 
-Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` は `workers_dev: false` に設定済みで、`*.workers.dev` URL を無効化している。画像取得 URL を含め、公開経路は custom domain だけに限定する。
+`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が設定されていない場合、写真 API は読み取り・書き込みとも 401 `access_not_configured` で fail-closed になる。ブラウザからの写真の表示・追加は Access の設定を前提とする。有効化手順は [deployment.md](./deployment.md) の手順 5 を参照。
+
+Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` は `workers_dev: false` に設定済みで、`*.workers.dev` URL を無効化している。画像取得 URL を含め、配信経路は custom domain だけに限定する。
 
 ## リクエストフロー
 
@@ -197,8 +199,8 @@ training-logger/
 │   │   ├── session-photos.js    # 写真アップロード・削除 UI
 │   │   ├── muscle-atlas.js      # Human Atlas 3D 表示
 │   │   └── vendor/              # Three.js（本体 + ライセンス）
-│   ├── models/human-atlas/      # 筋肉モデル (atlas.json, muscles.bin.gz, ATTRIBUTION)
-│   └── skills/                  # Skill 配布物 (log-workout.zip)
+│   ├── models/human-atlas/      # 筋肉モデル (atlas.json, muscles.bin.gz, ATTRIBUTION.md, HUMAN-ATLAS-LICENSE.txt)
+│   └── skills/                  # Skill 配布物 (log-workout.zip, log-workout/SKILL.md)
 ├── skills/
 │   └── log-workout/
 │       └── SKILL.md             # Skill 正本
@@ -242,7 +244,7 @@ training-logger/
 
 ### ディレクトリの責務
 
-**`src/db/`** - データアクセス層。ビジネスロジックの本体。SQL を直接記述し（ORM 不使用）、D1 の SQLite 方言を活用する。ORM を使わない理由は、D1 の SQLite 方言との相性問題を回避するため。
+**`src/db/`** - データアクセス層。ビジネスロジックの本体。SQL を直接記述し（ORM 不使用）、D1 の SQLite 方言を活用する。ORM を使わない理由は、D1 の SQLite 方言との相性問題を回避するため。一部の SSR ビュー（種目進捗・種目一覧・前後セッション取得）は表示専用の集計 SQL をビュー内に直接持つ。
 
 **`src/mcp/`** - MCP サーバの実装。各ツールは薄く保ち、入力バリデーション（Zod）とレスポンス整形のみを担当する。ビジネスロジックは `db/` に委譲する。
 
@@ -254,7 +256,7 @@ training-logger/
 
 **`public/`** - Workers Assets で配信される静的ファイル。`/static` プレフィックスは使わず、サイトルートから直接配信する（例: `/css/style.css`）。
 
-**`migrations/`** - D1 のマイグレーション SQL。`wrangler d1 migrations apply` で適用する。
+**`migrations/`** - D1 のマイグレーション SQL。`pnpm exec wrangler d1 migrations apply` で適用する。
 
 **`test/`** - `@cloudflare/vitest-pool-workers` を使用し、実際の D1 バインディングでテストを実行する。
 
