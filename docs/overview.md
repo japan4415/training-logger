@@ -31,7 +31,7 @@ flowchart TD
 
 ### ステップ 1: MCP サーバを AI チャットに接続
 
-ChatGPT（Developer Mode Connector）、claude.ai（Custom Connector）、または Claude Desktop（mcp-remote ブリッジ）に本システムの MCP エンドポイントを登録する。接続先は `POST /mcp`（Streamable HTTP）。各クライアントの接続手順は [mcp-server.md](./mcp-server.md) を参照。
+ChatGPT（Developer Mode Connector）、claude.ai（Custom Connector）、または Claude Desktop（リモートコネクタ推奨、または mcp-remote ブリッジ）に本システムの MCP エンドポイントを登録する。接続先は `POST /mcp`（Streamable HTTP）。各クライアントの接続手順は [mcp-server.md](./mcp-server.md) を参照。
 
 - ChatGPT: [Developer Mode での MCP 接続](https://developers.openai.com/api/docs/mcp)（remote HTTPS 必須、認証なしモードで登録可）
 - claude.ai: [Custom Connector](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)（公開 HTTPS 必須、Free プランでも 1 個まで登録可）
@@ -43,11 +43,11 @@ ChatGPT（Developer Mode Connector）、claude.ai（Custom Connector）、また
 - 「今日はシーテッドロウ 16kg 15回2セットやった」
 - 「（ノートの写真を添付して）これを記録して」
 
-LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデータベースに登録する。未登録の種目は `register_exercise` で自動登録される。
+LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデータベースに登録する。未登録の種目は `log_workout` が自動登録する（明示的に `register_exercise` で登録することもできる）。
 
 ### ステップ 3: GitHub issue を起票
 
-記録できない情報（例: 心拍数）や改善要望がある場合、チャットクライアント側の GitHub MCP コネクタや `gh` CLI で GitHub issue を起票する。
+記録できない情報（例: 心拍数）や改善要望がある場合、MCP ツール `create_feedback` で GitHub issue を起票する（`GITHUB_TOKEN` 未設定時は手動起票用の URL が返る）。チャットクライアント側の GitHub MCP コネクタや `gh` CLI でも起票できる。
 
 - 「心拍数も記録したい。要望として issue 立てて」
 - 「種目のカテゴリ分けがほしい」
@@ -60,7 +60,7 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 
 ### ステップ 5: Web サイトで振り返り
 
-ブラウザから Web UI にアクセスし、過去の記録を閲覧する。種目別の重量推移チャート、セッション一覧、詳細表示が利用できる。Web UI は読み取り専用のビューアであり、記録の入力はすべてチャット経由で行う。詳細は [web-ui.md](./web-ui.md) を参照。
+ブラウザから Web UI にアクセスし、過去の記録を閲覧する。種目別の重量推移チャート、セッション一覧、詳細表示に加え、鍛えた部位を Human Atlas の 3D 表示で確認できる。Web UI は読み取り専用のビューアであり、記録の入力はすべてチャット経由で行う（セッション写真の追加・削除のみ Web UI から可能）。詳細は [web-ui.md](./web-ui.md) を参照。
 
 ## 技術選定サマリ
 
@@ -80,20 +80,20 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 ### Phase 1: 基盤 + MCP 最小構成
 
 - D1 スキーマ設計・マイグレーション
-- MCP サーバ実装（6 ツール）
+- MCP サーバ実装（CRUD 6 ツール。後に写真 2・Atlas 筋肉管理 2・フィードバック 1 を追加し計 11 ツール）
 - ChatGPT / claude.ai からの接続確認
 - CI（型チェック・lint・テスト）
 
 ### Phase 2: Web UI
 
-- SSR ページ実装（セッション一覧・詳細・種目別推移）
+- SSR ページ実装（セッション一覧・詳細・種目別推移・種目一覧）
 - htmx による部分更新
 - Chart.js による推移チャート
 
 ### Phase 3: 運用改善
 
 - CD パイプライン（Cloudflare Workers Builds による Git 連携で merge → 自動デプロイ）
-- E2E テスト
+- E2E 検証（実データ投入と Web UI 表示確認）
 - ドキュメント追従の最終化
 
 各フェーズの詳細なタスクと優先順位は [roadmap.md](./roadmap.md) を参照。
@@ -102,7 +102,7 @@ LLM が内容を解釈し、MCP ツール `log_workout` を呼び出してデー
 
 以下は現時点では対象外とする:
 
-- **複数ユーザー対応**: 個人利用に限定
+- **複数ユーザー対応**: 個人利用に限定（ログイン機構は GitHub issue [#66](https://github.com/japan4415/training-logger/issues/66) で検討中）
 - **食事記録**: トレーニング記録に集中する
 - **ネイティブアプリ**: Web UI + AI チャットで十分
 

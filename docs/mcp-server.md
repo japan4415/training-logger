@@ -25,6 +25,8 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 - `tools/list` -- 利用可能なツール一覧の返却
 - `tools/call` -- ツールの実行
 
+このほか SDK が `notifications/initialized` や `ping` などにも応答する。ここでは業務上重要な 3 メソッドを示す。
+
 **GET リクエストには 405 Method Not Allowed を返す**。本サーバは SSE ストリームを提供しないステートレス実装であり、Streamable HTTP 仕様に基づきサーバは GET に対して 405 を返してよい。
 
 ## ツール定義
@@ -62,8 +64,11 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **挙動**:
 
-1. `exercises` テーブルと `exercise_aliases` テーブルを JOIN し、`query` を LIKE で部分一致検索する
-2. `category` が指定されていれば AND 条件で絞り込む
+1. `query` を次の 3 段階で解決する（前段でヒットしたらそこで確定し、部分一致へは進まない）:
+   1. `exercises.name` の完全一致 (COLLATE NOCASE)
+   2. `exercise_aliases.alias` の完全一致 (COLLATE NOCASE)
+   3. `exercises.name` / `exercise_aliases.alias` の LIKE 部分一致
+2. `category` が指定されていれば結果を AND 条件で絞り込む
 3. 結果を以下の形式で返す:
 
 ```json
@@ -75,6 +80,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
       "category": "strength",
       "equipment": "カイザー空圧マシン",
       "target_muscles": null,
+      "atlas_muscles": { "primary": ["FJ1447", "FJ1447M"], "secondary": [], "unavailable": [] },
       "aliases": ["Keiser Chest Press", "カイザーCP"]
     }
   ]
@@ -117,6 +123,10 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
       "type": "string",
       "description": "対象部位"
     },
+    "atlas_muscles": {
+      "type": ["object", "null"],
+      "description": "Atlas筋肉の割当。省略時は既知の種目名から設定、nullは従来の部位名で表示"
+    },
     "aliases": {
       "type": "array",
       "items": { "type": "string" },
@@ -130,16 +140,18 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 **挙動**:
 
 1. `exercises` テーブルに INSERT する
-2. `aliases` が指定されていれば `exercise_aliases` テーブルにも INSERT する
-3. 登録した種目の情報を返す
+2. `atlas_muscles` が省略された場合は既知の種目名に対する既定割当を設定し、明示的な `null` は NULL のまま（従来の部位メモ表示）、指定された値は検証して保存する
+3. `aliases` が指定されていれば `exercise_aliases` テーブルにも INSERT する
+4. 登録した種目の情報を返す（デコード済み `atlas_muscles` を含む）
 
 **エラー応答**:
 
-- `name` または `alias` が既存の種目名・別名と重複する場合、既存種目の情報を含むエラーを返す（「この種目のことですか?」と LLM がユーザーに提示できるようにする）
+- `exercises.name` 同士、または `exercise_aliases.alias` 同士の UNIQUE 衝突が起きた場合、既存種目の情報を含むエラーを返す（「この種目のことですか?」と LLM がユーザーに提示できるようにする）。衝突の種別に応じてエラーメッセージは「種目名が既に登録されています」「別名が既に登録されています」のいずれかになる
+- **現状の制約**: 重複検出は `exercises.name` 同士と `exercise_aliases.alias` 同士の UNIQUE 制約に限られる。新しい `name` が既存の `alias` と一致する場合や、新しい `alias` が既存の `name` と一致する場合はエラーにならず登録される。また `exercises` の INSERT と `exercise_aliases` の INSERT は 1 つのトランザクションではないため、別名の衝突時には新しい種目行が残ったままエラーが返り得る。重複エラー時は `search_exercises` で既存種目を確認し、孤児行が疑われる場合はユーザーに確認する
 
 ### log_workout
 
-1 日分のワークアウト記録。6 ツールの中核となるツール。
+1 日分のワークアウト記録。記録系 6 ツールの中核となるツール。
 
 **説明文** (LLM 向け):
 
@@ -170,6 +182,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
     },
     "exercises": {
       "type": "array",
+      "minItems": 1,
       "description": "種目とセット情報の配列",
       "items": {
         "type": "object",
@@ -265,11 +278,11 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
    - `exercises.name` / `exercise_aliases.alias` の部分一致 (LIKE)
    - いずれにもヒットしない場合は自動登録する（`duration_minutes` や `speed_min`/`speed_max` があれば `cardio`、なければ `strength` と推測）
 5. `session_exercises` と `sets` を INSERT する。`sets.set_order` は `is_planned` の値（0=実績 / 1=計画）ごとに独立して 1 から連番を付与する（[database.md](./database.md) の計画 vs 実績セクション参照）
-6. サマリーを返す（日付、登録種目数、セット数、自動登録された種目名）
+6. サマリーを返す（`session_id`、日付、登録種目数、セット数、自動登録された種目名）
 
 **重複対策**:
 
-同日に再度呼び出された場合は既存セッションに**追記**する（上書きしない）。既存記録の修正には `update_workout` を使用する。
+同日に再度呼び出された場合、既存セッションの `goal` / `body_condition` / `session_notes` は指定された値で更新し、種目とセットは既存に**追記**する（既存の種目・セットは置き換えない）。既存記録の修正には `update_workout` を使用する。
 
 ### update_workout
 
@@ -353,9 +366,9 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **エラー応答**:
 
-- 指定した日付にセッションが存在しない -> 404 相当のエラー
-- 指定した種目名が見つからない -> 404 相当のエラー
-- 同名種目が複数あり `exercise_order` が未指定 -> 候補一覧を返して選択を促す
+- 指定した日付にセッションが存在しない -> `isError: true` のツールエラー（`error` メッセージ）
+- 指定した種目名が見つからない -> `isError: true` のツールエラー
+- 同名種目が複数あり `exercise_order` が未指定 -> `isError: true` で候補一覧を返して選択を促す
 
 ### delete_workout
 
@@ -454,8 +467,10 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 - **種目指定**: その種目の履歴をセット付きで返す。「前回のシーテッドロウ何 kg?」のような質問に回答できる
 - **期間指定**: 範囲内のセッション一覧を返す
-- **無指定**: 最新 5 セッション（`last_n_sessions` のデフォルト値）の概要を返す
-- `include_sets = false` の場合、セット詳細を省略してセッションと種目名のみを返す（一覧表示用）
+- **無指定**: 最新 5 セッション（`last_n_sessions` のデフォルト値）を返す
+- `last_n_sessions`（既定 5）は種目指定・期間指定・無指定のすべてで新しい順の上限（`ORDER BY session_date DESC` + `LIMIT`）として適用される。期間内のセッションを全件取得するには `last_n_sessions` を明示的に大きく指定する
+- 無指定でも `include_sets` の既定値は `true` のため、各セッションはセット付きの詳細で返る（概要ではない）
+- `include_sets = false` の場合、種目ごとの `sets` を空配列にして返す（`category` / `status` / `equipment_note` / `form_cues` / `notes` は含む）
 
 **エラー応答**:
 
@@ -589,7 +604,7 @@ training-logger への機能要望・不具合報告・種目追加要望を Git
       "type": "string",
       "enum": ["feature", "bug", "exercise_request", "other"],
       "default": "feature",
-      "description": "フィードバックのカテゴリ"
+      "description": "フィードバックのカテゴリ（既定: feature）"
     }
   },
   "required": ["title", "body"]
@@ -600,13 +615,89 @@ training-logger への機能要望・不具合報告・種目追加要望を Git
 
 1. `env.GITHUB_TOKEN` が未設定の場合、`isError: true` とともに事前入力済み URL `https://github.com/{owner}/{repo}/issues/new?title=<encoded>&body=<encoded>&labels=enhancement,from-mcp` を返し、LLM が手動起票を案内できるようにする。リポジトリは環境変数 `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` で上書き可能（既定値: `japan4415` / `training-logger`）
 2. `GET https://api.github.com/repos/{owner}/{repo}/issues?state=open&per_page=100&page=N` を `page=1` から順に呼び出し、返却件数が 100 未満になるまで（上限 10 ページ）走査する。返却要素のうち Pull Request（`pull_request` フィールドを持つ要素）を除外した上で、`title` が完全一致（trim 後）する open issue があれば新規起票せず `{ duplicate: true, issue_number, html_url, title }` を返す。上限 10 ページに達した場合は走査を打ち切り、それ以降の重複は検出しない
-3. `POST https://api.github.com/repos/{owner}/{repo}/issues` を `fetch` で呼ぶ。ヘッダに `Accept: application/vnd.github+json`、`Authorization: Bearer <token>`、`X-GitHub-Api-Version: 2022-11-28`、`User-Agent: training-logger-mcp`、`Content-Type: application/json` を設定。本文末尾に `\n\n---\n起票元: training-logger MCP create_feedback (category: <category>)` を付加し、ラベルに `["enhancement", "from-mcp"]` を指定する
+3. `POST https://api.github.com/repos/{owner}/{repo}/issues` を `fetch` で呼ぶ。ヘッダに `Accept: application/vnd.github+json`、`Authorization: Bearer <token>`、`X-GitHub-Api-Version: 2022-11-28`、`User-Agent: training-logger-mcp`、`Content-Type: application/json` を設定。本文末尾に区切り `---` と `起票元: training-logger MCP create_feedback (category: <category>)` を付加し（本文が改行で終わる場合は区切りが 1 改行、それ以外は 2 改行）、ラベルに `["enhancement", "from-mcp"]` を指定する
 4. 201 成功時は `{ issue_number, html_url, title, state }` を返す
 
 **エラー応答**:
 
 - `GITHUB_TOKEN` 未設定時: `isError: true` でエラーメッセージと手動起票用の事前入力 URL を返す
 - GitHub API エラー（401 / 403 / 422 / 5xx）: `isError: true` で HTTP ステータスコードと GitHub のエラーメッセージを含む LLM 向けメッセージを返す
+
+### list_atlas_muscles
+
+割当可能な Human Atlas の筋肉カタログ検索。
+
+**説明文** (LLM 向け):
+
+> 割当可能なHuman Atlasの筋肉ID・英語名・日本語名・部位を検索します。筋肉の登録・更新前にIDを確認してください。
+
+**入力スキーマ**:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "筋肉ID・英語名・日本語名・部位の部分一致"
+    }
+  }
+}
+```
+
+`query` は任意。`readOnlyHint: true` が付く。
+
+**挙動**:
+
+1. `query` 省略時は全筋肉を返す
+2. `id` / 英語名 / 日本語名 / 部位（groupLabel）を大文字小文字を無視した部分一致で絞り込む
+3. `{muscles: [{id, name, label, groupLabel}]}` を返す
+
+**エラー応答**:
+
+- 該当なしの場合は空配列 `{muscles: []}` を返す（エラーにしない）
+
+左右・筋頭・筋部は個別 ID である。`set_exercise_muscles` へ渡す種目 ID は `search_exercises` で取得する。
+
+### set_exercise_muscles
+
+登録済み種目の Atlas 筋肉割当の置き換え。
+
+**説明文** (LLM 向け):
+
+> 登録済み種目の主働筋・補助筋をAtlasの正確なIDで設定します。既存割当を置換します。nullで従来の部位名による表示へ戻します。
+
+**入力スキーマ**:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "exercise_id": {
+      "type": "integer",
+      "description": "種目ID"
+    },
+    "atlas_muscles": {
+      "type": ["object", "null"],
+      "description": "{primary: string[], secondary: string[], unavailable: string[]}。null は従来の部位メモ表示へ戻す"
+    }
+  },
+  "required": ["exercise_id", "atlas_muscles"]
+}
+```
+
+`atlas_muscles` は `primary` / `secondary` / `unavailable` の 3 キーを持つ strict な object（余分なキーは不可）。`primary` / `secondary` は配列要素あたり最大 160 文字・最大 200 件、`unavailable` は要素あたり最大 100 文字・最大 50 件。
+
+**挙動**:
+
+1. `exercise_id` は正の整数。対象種目の `atlas_muscles` 全体を指定値で置き換える
+2. カタログに無い筋肉 ID や不正な構造はエラーとし、DB を変更しない
+3. 更新後の種目情報（デコード済み `atlas_muscles` を含む）を返す
+
+**エラー応答**:
+
+- 種目が存在しない、または不明な筋肉 ID: `isError: true` のツールエラー（DB は変更しない）
 
 ## ツール設計の指針
 
@@ -650,15 +741,15 @@ https://training-logger.discord.jp/mcp
 
 カスタムドメインを設定済み。写真を保存する場合、Claude Code などローカルファイルを読める環境では記録後に `upload_session_photo` で base64 を直接送信できる。それ以外のクライアントでは `create_photo_upload_link` が返す URL をブラウザで開いてアップロードする。チャットの添付画像を MCP のツール引数へそのまま渡す標準経路はない。
 
-`POST /mcp` は `upload_session_photo` の入力として base64 を受け付けるが、ツール結果から保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。
+`POST /mcp` は `upload_session_photo` の入力として base64 を受け付けるが、ツール結果から保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。写真 API は GET / POST / DELETE のいずれも Worker 内で Access JWT を検証し（取得の GET は CSRF 検査なし）、`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定なら 401 `access_not_configured` を返す。したがって `upload_session_photo` が返す `url` も Access を設定しない限り取得できない。
 
 ### セキュリティ境界
 
 `/mcp` は現在認証なしで公開しているため、`upload_session_photo` を使って誰でも R2 に書き込める。上限はセッションあたり 4 枚 × 10 MiB だが、セッション自体も認証なしの `log_workout` で作成できるため、R2 への書き込み総量に上限はない。このリスクを受容し、`/mcp` への認証追加を前提とした暫定運用とする。枚数・サイズ上限は入力事故の緩和策であり、認可対策ではない。
 
-一方、ブラウザ経由の `POST /api/sessions/:id/photos` と `DELETE /api/sessions/:id/photos/:photoId` は `requireAccessUser` による Fetch Metadata の CSRF 検査と Cloudflare Access JWT 検証で保護する。Zero Trust では custom domain の `/mcp` だけを Bypass とし、`/sessions/*` と `/api/*` は Allow ポリシー配下に置く。Skill の公開配布 URL が必要な場合は `/skills/*` も限定的に Bypass できる。
+一方、ブラウザ経由の写真 API は Worker 内でも Cloudflare Access JWT を検証する。`GET /api/sessions/:id/photos` と `GET /api/sessions/:id/photos/:photoId` は読み取りとして JWT のみ検証し（CSRF 検査なし）、`POST` と `DELETE` は加えて Fetch Metadata の CSRF 検査を行う。`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定なら読み取り・書き込みとも 401 `access_not_configured` で fail-closed になる。Zero Trust では custom domain の `/mcp` だけを Bypass とし、`/sessions/*` と `/api/*` は Allow ポリシー配下に置く。Skill の公開配布 URL が必要な場合は `/skills/*` も限定的に Bypass できる。
 
-`wrangler.jsonc` は `workers_dev: false` に設定済みであり、`*.workers.dev` URL は無効である。公開経路は Access を設定した custom domain のみとする。設定方法は [deployment.md](./deployment.md) を参照。
+`wrangler.jsonc` は `workers_dev: false` に設定済みであり、`*.workers.dev` URL は無効である。配信経路は custom domain のみに限定する。有効化方法は [deployment.md](./deployment.md) の手順 5 を参照。
 
 ### ChatGPT
 
@@ -671,8 +762,8 @@ https://training-logger.discord.jp/mcp
 
 **注意事項**:
 
-- 書き込みツール（`log_workout`, `update_workout`, `delete_workout`, `register_exercise`）は通常チャットで利用可能（実行前に確認あり）
-- Deep Research モードでは read-only（`search_exercises`, `get_history` のみ利用可能）
+- 書き込みを伴うツール（`log_workout`, `update_workout`, `delete_workout`, `register_exercise`, `set_exercise_muscles`, `upload_session_photo`, `create_feedback`）は通常チャットで利用可能（実行前に確認あり）
+- Deep Research などの read-only モードで使えるツールはクライアントの判定に依存する。実装上 `readOnlyHint` を宣言しているのは `list_atlas_muscles` のみで、残り 10 ツール（`search_exercises` / `register_exercise` / `log_workout` / `update_workout` / `delete_workout` / `get_history` / `create_photo_upload_link` / `upload_session_photo` / `set_exercise_muscles` / `create_feedback`）には annotations が無い
 - モバイルアプリからの MCP コネクタ利用は非対応
 - 添付画像の保存には `create_photo_upload_link` の URL をブラウザで開き、同じ画像を選択する
 
@@ -904,7 +995,7 @@ Claude Code などローカルファイルを読める環境では、ファイ�
 ```
 
 **LLM の応答**:
-> GitHub issue #58 を起票しました: [有酸素運動における心拍数ゾーン滞在時間の記録サポート要望](https://github.com/japan4415/training-logger/issues/58)
+> GitHub issue を起票しました: 有酸素運動における心拍数ゾーン滞在時間の記録サポート要望（`https://github.com/japan4415/training-logger/issues/<番号>`）
 > 機能が追加されるまで、当面はセットのメモ欄（notes）に「ゾーン2: 15分」のように記録しておくことをお勧めします。
 
 ## Atlas筋肉の管理
@@ -915,4 +1006,4 @@ Claude Code などローカルファイルを読める環境では、ファイ�
 - `set_exercise_muscles(exercise_id: number, atlas_muscles: object | null)`: 種目の割当全体を置き換える。種目IDは正の整数。不明ID・不明筋肉IDはエラーとし、DBを変更しない。
 - `search_exercises` / `register_exercise` のレスポンスに、デコード済み `atlas_muscles` を含む。
 
-primary/secondaryはそれぞれ最大200件、unavailableは最大50件・名称100文字。primaryとsecondaryに重複するIDはprimaryを優先する。RESTの種目詳細・一覧も `atlas_muscles` を返す。セッションAPIは従来の `target_muscles_summary` に加え、完了種目の明示割当を集約した `atlas_muscles_summary` と各種目の `atlas_muscles` を返す。NULLの従来値は新しいID集約には含めない。
+primary/secondaryは配列要素あたり最大160文字・最大200件、unavailableは最大100文字・最大50件。primaryとsecondaryに重複するIDはprimaryを優先する。RESTの種目詳細・一覧も `atlas_muscles` を返す。セッションAPIは従来の `target_muscles_summary` に加え、完了種目の明示割当を集約した `atlas_muscles_summary` と各種目の `atlas_muscles` を返す。NULLの従来値は新しいID集約には含めない。

@@ -10,10 +10,10 @@
 | フレームワーク | Hono v4.x | MCP / REST / SSR / 静的配信を単一 Worker で統合 |
 | データベース | Cloudflare D1 | エッジ SQLite。[無料枠](https://developers.cloudflare.com/d1/platform/pricing/): 5GB / 読み 500万行/日 / 書き 10万行/日 |
 | オブジェクトストレージ | Cloudflare R2 | `training-logger-photos` に `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` 形式でセッション写真を保存。D1 はメタデータだけを保持 |
-| ブラウザ認証 | Cloudflare Access | custom domain のセッション画面と写真書き込み API を保護 |
+| ブラウザ認証 | Cloudflare Access | custom domain のセッション画面と写真 API（読み書き）を保護する任意の推奨構成 |
 | 静的配信 | Workers Assets | `wrangler.jsonc` の `assets.directory` で設定。[2026年現在 Pages より Workers + Assets が Cloudflare 推奨](https://developers.cloudflare.com/workers/static-assets/) |
 | MCP SDK | `@modelcontextprotocol/sdk` v1.30.x (stable) | `McpServer` + `registerTool` + Zod でツール定義 |
-| MCP トランスポート | Streamable HTTP（ステートレス） | Hono ミドルウェアとして実装 |
+| MCP トランスポート | Streamable HTTP（ステートレス） | Hono ルートとして実装 |
 | MCP プロトコルバージョン | `2025-11-25`（現行安定版） | `2026-07-28` RC の stable 化後に移行検討 |
 | 言語 | TypeScript (strict) | |
 | パッケージマネージャ | pnpm | Renovate（リポジトリで有効化済み）と相性良好 |
@@ -43,18 +43,18 @@ graph TB
     subgraph Clients
         ChatGPT["ChatGPT<br/>(Developer Mode Connector)"]
         ClaudeAI["claude.ai<br/>(Custom Connector)"]
-        ClaudeDesktop["Claude Desktop<br/>(mcp-remote)"]
+        ClaudeDesktop["Claude Desktop<br/>(Connector / mcp-remote)"]
         Browser["ブラウザ"]
     end
 
     subgraph Cloudflare
-        Access["Cloudflare Access<br/>/sessions/* /api/*"]
+        Access["Cloudflare Access<br/>(任意)"]
         subgraph Worker["Cloudflare Worker: training-logger"]
             HonoApp["Hono App"]
             MCP["MCP Handler<br/>POST /mcp"]
             REST["REST API<br/>/api/*"]
             SSR["SSR<br/>Hono JSX"]
-            Assets["Workers Assets<br/>/css/* /js/*"]
+            Assets["Workers Assets<br/>/css/* /js/* /models/* /skills/*"]
         end
 
         D1["D1: training-logger-db"]
@@ -78,6 +78,8 @@ graph TB
     REST --> D1
     SSR --> D1
     REST --> R2
+    MCP --> R2
+    SSR --> R2
 ```
 
 単一の Cloudflare Worker 内で Hono が以下の 4 つの役割を統合する:
@@ -89,9 +91,11 @@ graph TB
 
 ### Cloudflare Access の保護範囲
 
-custom domain では `/sessions/*` と `/api/*` を Cloudflare Access の Allow ポリシーで保護する。`/mcp` は ChatGPT / Claude の認証なしコネクタから到達できるよう Bypass とし、配布物を直接取得させる場合だけ `/skills/*` も Bypass の候補とする。アプリケーション内でも写真の GET / POST / DELETE は Access JWT を検証し、POST / DELETE は加えて Fetch Metadata を検証するが、`/mcp` 自体は認証しない。
+custom domain に Cloudflare Access を設定すると、`/sessions/*` と `/api/*` を Allow ポリシーで保護できる。`/mcp` は ChatGPT / Claude の認証なしコネクタから到達できるよう Bypass とし、配布物を直接取得させる場合だけ `/skills/*` も Bypass の候補とする。アプリケーション内でも写真の GET / POST / DELETE は Access JWT を検証し、POST / DELETE は加えて Fetch Metadata を検証するが、`/mcp` 自体は認証しない。
 
-Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` は `workers_dev: false` に設定済みで、`*.workers.dev` URL を無効化している。画像取得 URL を含め、公開経路は custom domain だけに限定する。
+`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が設定されていない場合、写真 API は読み取り・書き込みとも 401 `access_not_configured` で fail-closed になる。ブラウザからの写真の表示・追加は Access の設定を前提とする。有効化手順は [deployment.md](./deployment.md) の手順 5 を参照。
+
+Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` は `workers_dev: false` に設定済みで、`*.workers.dev` URL を無効化している。画像取得 URL を含め、配信経路は custom domain だけに限定する。
 
 ## リクエストフロー
 
@@ -144,13 +148,18 @@ training-logger/
 │   ├── architecture.md          # 技術スタック・システム構成・リクエストフロー
 │   ├── database.md              # テーブル設計・ER 図・マイグレーション方針
 │   ├── mcp-server.md            # MCP ツール仕様・エンドポイント・接続手順
+│   ├── skill.md                 # 登録手順 Skill の仕様・導入・利用手順
+│   ├── anatomy.md               # Atlas の筋肉カタログ・種目対応・出典
 │   ├── web-ui.md                # Web UI 画面設計・SSR 構成
 │   ├── deployment.md            # デプロイ手順・Cloudflare 設定・CI/CD
 │   ├── development.md           # ローカル開発・テスト・lint
 │   └── roadmap.md               # フェーズ計画・将来構想
 ├── src/
 │   ├── index.ts                 # Hono app エントリポイント、ルーティング統合
-│   ├── env.ts                   # Bindings 型定義 (D1 / R2 / Access)
+│   ├── env.ts                   # Bindings 型定義 (D1 / R2 / Access / GitHub)
+│   ├── domain/
+│   │   ├── atlas.ts             # Atlas カタログ・割当の検証/集約
+│   │   └── atlas-profiles.json  # 初期プロファイル（14 種目の ID と出典）
 │   ├── security/
 │   │   └── access-auth.ts       # Access JWT 検証と CSRF 防止
 │   ├── db/                      # データアクセス層
@@ -161,18 +170,19 @@ training-logger/
 │   │   ├── records.ts           # セット記録の CRUD
 │   │   └── queries.ts           # 集計・検索クエリ
 │   ├── mcp/
-│   │   ├── handler.ts           # Streamable HTTP ハンドラ (Hono ミドルウェア)
+│   │   ├── handler.ts           # Streamable HTTP ハンドラ (Hono ルート)
 │   │   ├── server.ts            # McpServer 生成・ツール登録集約
 │   │   └── tools/               # 各 MCP ツールの実装
-│   │       ├── exercises.ts     # search_exercises, register_exercise
+│   │       ├── exercises.ts     # search_exercises, register_exercise, list_atlas_muscles, set_exercise_muscles
 │   │       ├── workouts.ts      # log_workout, update_workout, delete_workout
-│   │       ├── photos.ts        # 写真アップロード画面のリンク発行
-│   │       └── history.ts       # get_history
+│   │       ├── photos.ts        # upload_session_photo, create_photo_upload_link
+│   │       ├── history.ts       # get_history
+│   │       └── feedback.ts      # create_feedback
 │   ├── api/                     # REST API (Web UI 向け)
 │   │   ├── routes.ts            # API ルーティング
 │   │   ├── sessions.ts          # セッション一覧・詳細
 │   │   ├── photos.ts            # 写真一覧・本体配信・追加・削除
-│   │   ├── exercises.ts         # 種目一覧
+│   │   ├── exercises.ts         # 種目一覧・詳細
 │   │   └── stats.ts             # 統計・集計
 │   └── views/                   # SSR (Hono JSX)
 │       ├── layout.tsx           # 共通レイアウト
@@ -180,19 +190,27 @@ training-logger/
 │       ├── session-detail.tsx   # セッション詳細ページ
 │       ├── exercise-progress.tsx # 種目別推移ページ
 │       ├── exercises-list.tsx   # 種目一覧ページ
-│       └── components/          # 共通コンポーネント
+│       └── components/          # 共通コンポーネント (session-card, set-table, chart, session-photos, muscle-map)
 ├── public/                      # Workers Assets (サイトルートで配信)
 │   ├── css/
 │   │   └── style.css
 │   ├── js/
 │   │   ├── chart-init.js
-│   │   └── session-photos.js    # 写真アップロード・削除 UI
-│   └── skills/                  # Skill 配布物
+│   │   ├── session-photos.js    # 写真アップロード・削除 UI
+│   │   ├── muscle-atlas.js      # Human Atlas 3D 表示
+│   │   └── vendor/              # Three.js（本体 + ライセンス）
+│   ├── models/human-atlas/      # 筋肉モデル (atlas.json, muscles.bin.gz, ATTRIBUTION.md, HUMAN-ATLAS-LICENSE.txt)
+│   └── skills/                  # Skill 配布物 (log-workout.zip, log-workout/SKILL.md)
 ├── skills/
 │   └── log-workout/
 │       └── SKILL.md             # Skill 正本
 ├── scripts/
-│   └── build-skill.mjs          # 配布物生成
+│   ├── build-skill.mjs          # 配布物生成
+│   ├── import-human-atlas.mjs   # Human Atlas 取り込み
+│   ├── import-bodyparts3d-v3.mjs # BodyParts3D 3.0 補完
+│   ├── vendor-three.mjs         # Three.js 同梱
+│   ├── generate-atlas-migration.mjs # Atlas 移行 SQL 生成
+│   └── verify-bodyparts3d-registration.py # 位置合わせ検証
 ├── migrations/                  # D1 マイグレーション
 │   ├── 0001_initial_schema.sql
 │   ├── 0002_atlas_muscles.sql
@@ -201,24 +219,32 @@ training-logger/
 │   └── README.md
 ├── test/                        # Vitest テスト
 │   ├── db/                      # データアクセス層のテスト
+│   ├── domain/                  # Atlas 割当のテスト
 │   ├── mcp/                     # MCP ハンドラ・ツールのテスト
 │   ├── api/                     # REST API のテスト
-│   └── views/                   # SSR ビューのテスト
+│   ├── views/                   # SSR ビューのテスト
+│   ├── security/                # Access JWT 検証のテスト
+│   └── fixtures/                # テストフィクスチャ
+├── .claude/skills/log-workout   # リポジトリ内 Skill へのシンボリックリンク
 ├── .github/
 │   ├── workflows/
 │   │   └── ci.yml               # CI (typecheck, lint, D1 マイグレーション検証, test)
 │   └── ISSUE_TEMPLATE/
+│       └── feature-request.md
+├── .dev.vars.example            # ローカル用の環境変数テンプレート
+├── .gitignore
 ├── wrangler.jsonc               # Cloudflare Workers 設定
 ├── tsconfig.json
 ├── biome.json
 ├── vitest.config.ts
 ├── package.json
+├── pnpm-lock.yaml
 └── renovate.json                # Renovate 自動依存更新設定
 ```
 
 ### ディレクトリの責務
 
-**`src/db/`** - データアクセス層。ビジネスロジックの本体。SQL を直接記述し（ORM 不使用）、D1 の SQLite 方言を活用する。ORM を使わない理由は、D1 の SQLite 方言との相性問題を回避するため。
+**`src/db/`** - データアクセス層。ビジネスロジックの本体。SQL を直接記述し（ORM 不使用）、D1 の SQLite 方言を活用する。ORM を使わない理由は、D1 の SQLite 方言との相性問題を回避するため。一部の SSR ビュー（種目進捗・種目一覧・前後セッション取得）は表示専用の集計 SQL をビュー内に直接持つ。
 
 **`src/mcp/`** - MCP サーバの実装。各ツールは薄く保ち、入力バリデーション（Zod）とレスポンス整形のみを担当する。ビジネスロジックは `db/` に委譲する。
 
@@ -230,7 +256,7 @@ training-logger/
 
 **`public/`** - Workers Assets で配信される静的ファイル。`/static` プレフィックスは使わず、サイトルートから直接配信する（例: `/css/style.css`）。
 
-**`migrations/`** - D1 のマイグレーション SQL。`wrangler d1 migrations apply` で適用する。
+**`migrations/`** - D1 のマイグレーション SQL。`pnpm exec wrangler d1 migrations apply` で適用する。
 
 **`test/`** - `@cloudflare/vitest-pool-workers` を使用し、実際の D1 バインディングでテストを実行する。
 

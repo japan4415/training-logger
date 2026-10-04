@@ -7,7 +7,7 @@
 | Worker | `training-logger` | 単一 Worker で MCP + REST API + SSR + Workers Assets を統合配信 |
 | D1 Database | `training-logger-db` | 本番データベース。ローカル開発は `wrangler dev` の自動ローカル D1 を使用 |
 | R2 Bucket | `training-logger-photos` | セッション写真の画像本体を保存。Standard storage class |
-| Cloudflare Access | custom domain のアプリケーション | `/sessions/*` と `/api/*` を認証し、写真の書き込みを保護 |
+| Cloudflare Access | custom domain のアプリケーション | `/sessions/*` と `/api/*` を認証する任意の推奨構成。設定すると写真 API（読み書き）を保護する（手順 5 参照） |
 
 ## wrangler.jsonc
 
@@ -29,7 +29,7 @@
     {
       "binding": "DB",
       "database_name": "training-logger-db",
-      "database_id": "<production-db-id>",
+      "database_id": "fed11dc7-680c-4245-a3db-95e73f4ddebe",
       "migrations_dir": "migrations"
     }
   ],
@@ -51,17 +51,17 @@
 }
 ```
 
-`workers_dev: false` により `https://<worker>.<account>.workers.dev` は無効化済みで、公開経路は Cloudflare Access を設定した custom domain のみに限定する。
+`workers_dev: false` により `https://<worker>.<account>.workers.dev` は無効化済みで、配信経路は custom domain のみに限定する。Cloudflare Access を設定すると `/sessions/*` と `/api/*` を認証できる。未設定の場合、写真 API は 401 `access_not_configured` を返す。
 
 ## 初期構築手順
 
 ### 1. D1 データベースの作成
 
 ```bash
-wrangler d1 create training-logger-db
+pnpm exec wrangler d1 create training-logger-db
 ```
 
-出力される `database_id` を `wrangler.jsonc` の `<production-db-id>` に反映する。
+出力される `database_id` を `wrangler.jsonc` の `d1_databases[].database_id` に反映する。本番環境では上記コードブロックの `fed11dc7-680c-4245-a3db-95e73f4ddebe` を設定済み。
 
 ### 2. R2 バケットの作成
 
@@ -74,7 +74,7 @@ pnpm exec wrangler r2 bucket create training-logger-photos
 ### 3. マイグレーションの適用
 
 ```bash
-wrangler d1 migrations apply training-logger-db --remote
+pnpm exec wrangler d1 migrations apply training-logger-db --remote
 ```
 
 ### 4. GitHub トークンの設定（MCP create_feedback 用）
@@ -82,12 +82,14 @@ wrangler d1 migrations apply training-logger-db --remote
 MCP 経由の Issue 起票（`create_feedback`）を利用するため、GitHub の Fine-grained Personal Access Token（権限: `Issues: Read and write`）を発行し、Wrangler secret として登録する。
 
 ```bash
-wrangler secret put GITHUB_TOKEN
+pnpm exec wrangler secret put GITHUB_TOKEN
 ```
 
 ※ 登録先リポジトリを変更したい場合は、環境変数 `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` を指定する（未設定時は既定値 `japan4415` / `training-logger`）。
 
 ### 5. Cloudflare Access の設定
+
+> Cloudflare Access は任意の推奨構成。設定すると `/sessions/*` と `/api/*` を認証できる。未設定の場合、写真 API は 401 `access_not_configured` を返す。以下は有効化する場合の手順。
 
 Cloudflare Zero Trust で custom domain を対象とした Self-hosted application を作成し、パスごとに次のポリシーを設定する。
 
@@ -116,7 +118,7 @@ pnpm exec wrangler secret put ACCESS_TEAM_DOMAIN
 pnpm exec wrangler secret put ACCESS_AUD
 ```
 
-どちらか一方でも未設定なら写真 API は読み書きとも 401 `access_not_configured` で fail-closed になる。
+どちらか一方でも未設定なら写真 API は読み書きとも 401 `access_not_configured` で fail-closed になる。ただし書き込み（POST / DELETE）は認証前に `Sec-Fetch-Site` を検査するため、ヘッダーが無い、または `same-origin` / `none` 以外の場合は設定の有無にかかわらず 403 `csrf_forbidden` を返す。
 
 ### 6. デプロイ
 
@@ -124,7 +126,7 @@ pnpm exec wrangler secret put ACCESS_AUD
 pnpm exec wrangler deploy
 ```
 
-`wrangler versions deploy` を使用する場合、secret を追加した後は、対象バージョンの binding に新しい secret が含まれることを確認してからデプロイする。古いバージョンをそのまま指定すると、追加した Access 設定が反映されず写真書き込みが 401 になる可能性がある。
+`pnpm exec wrangler versions deploy` を使用する場合、secret を追加した後は、対象バージョンの binding に新しい secret が含まれることを確認してからデプロイする。古いバージョンをそのまま指定すると、追加した Access 設定が反映されず写真書き込みが 401 になる可能性がある。
 
 ### 7. 疎通確認
 
@@ -133,15 +135,15 @@ pnpm exec wrangler deploy
 - `GET /health` が 200 を返す
 - `POST /mcp` で MCP `initialize` が成功する
 - ブラウザで `/` にアクセスすると Web UI が表示される
-- Access 認証後にセッション画面を開き、写真の追加・取得・削除ができる
-- 未認証の写真 GET / POST / DELETE が 401 または Access 側で拒否される
+- Access を設定した場合は、認証後にセッション画面を開き、写真の追加・取得・削除ができる
+- 写真 API は Access の設定状況に応じて応答が変わる。未設定なら 401 `access_not_configured`、設定時は未認証リクエストが Access 側または Worker で拒否される
 
 ## 環境
 
 本番環境（production）のみ運用する。個人利用のため preview 環境を設ける利益が薄い。
 
-- **本番**: `wrangler deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `wrangler secret put` で設定
-- **ローカル開発**: `wrangler dev` で起動。D1 と R2 binding はローカルでエミュレートされる。マイグレーション適用は `wrangler d1 migrations apply training-logger-db --local`。写真 API の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定できるが、このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。写真の書き込みリクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
+- **本番**: `pnpm exec wrangler deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `pnpm exec wrangler secret put` で設定
+- **ローカル開発**: `wrangler dev` で起動。D1 と R2 binding はローカルでエミュレートされる。マイグレーション適用は `pnpm exec wrangler d1 migrations apply training-logger-db --local`。写真 API の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定できるが、このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。写真の書き込みリクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
 
 ## CI/CD
 
@@ -165,7 +167,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
@@ -190,7 +192,7 @@ jobs:
 
 Cloudflare Workers Builds（Git 連携）により、`main` ブランチへの push 時に自動デプロイが実行される。GitHub Actions の `deploy.yml` は使用しない。
 
-Cloudflare ダッシュボードで GitHub リポジトリを連携すると、`main` への push を検知して自動的にビルド・デプロイが行われる。現行のWorkers Builds設定はD1マイグレーションを自動適用しない。DB変更を含むPRでは、本番の `wrangler d1 migrations apply training-logger-db --remote` をデプロイ前に実行し、適用履歴を確認する（[運用手順](../migrations/README.md)）。ビルド成功だけではDB移行の完了を意味しない。
+Cloudflare ダッシュボードで GitHub リポジトリを連携すると、`main` への push を検知して自動的にビルド・デプロイが行われる。現行のWorkers Builds設定はD1マイグレーションを自動適用しない。DB変更を含むPRでは、本番の `pnpm exec wrangler d1 migrations apply training-logger-db --remote` をデプロイ前に実行し、適用履歴を確認する（[運用手順](../migrations/README.md)）。ビルド成功だけではDB移行の完了を意味しない。
 
 ## バックアップ
 
@@ -203,7 +205,7 @@ D1 は Cloudflare 側で Time Travel（ポイントインタイム復元）機�
 月次で手動エクスポートを推奨する:
 
 ```bash
-wrangler d1 export training-logger-db --remote --output=backup-YYYYMMDD.sql
+pnpm exec wrangler d1 export training-logger-db --remote --output=backup-YYYYMMDD.sql
 ```
 
 GitHub Actions cron による自動バックアップは将来課題とする（[ロードマップ](./roadmap.md)参照）。

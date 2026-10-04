@@ -54,17 +54,19 @@
 **構成要素**:
 
 - セッション情報: 日付・曜日（`session_date` から導出）・goal・体調メモ（`body_condition`）・notes
+- 筋肉マップ: 完了種目の `atlas_muscles` を集約した Human Atlas の 3D 表示（メタ情報と種目一覧の間）
 - 種目テーブル: 手書きノートの再現を意識した構成
   - 種目名（種目別進捗ページ `/exercises/:id` へのリンク）
   - ステータスアイコン: completed = ✓ / planned = ○ / skipped = ×
   - 器具メモ（`equipment_note`）
-  - セット表示: 筋力系は「20 x 50lbs, 20 x 45lbs」形式
+  - 種目メモ（`notes`）
+  - セット表示: 1 セット 1 行（`.set-item`）で表示
   - 有酸素系は「10分 / 傾斜0.5% / 3.5~5.0km/h」形式
   - 計画がある種目は計画 vs 実績の対比表示
   - フォームキュー（`form_cues`）はツールチップで表示
 - 前/次セッションへのナビゲーション
 - 写真セクション: 種目一覧の後、戻るリンクの前に `<details class="session-photos" id="photos">` を配置する
-  - 初期状態は閉じ、`<summary>写真 (N)</summary>` に D1 のメタデータ件数だけを表示する
+  - 初期状態は閉じ、`<summary>写真 (N)</summary>` に D1 のメタデータを R2 HEAD で実在確認した件数（R2 に無い行は削除）を表示する。画像本体は取得しない
   - 開いたときだけ htmx で `GET /sessions/:id/photos` を 1 回呼び、サムネイル一覧・削除ボタン・アップロードフォームの断片 HTML を取得する
   - 初期 HTML には `<img>` を含めず、取得後のサムネイルは `loading="lazy"` とする
   - ファイル入力は JPEG / PNG / WebP の複数選択に対応し、1 枚ずつ順番に送信する
@@ -104,12 +106,12 @@
 
 **構成要素**:
 
-- 種目基本情報: 名前・カテゴリ・器具・対象部位・別名（`exercise_aliases`）
+- 種目基本情報: 名前・カテゴリ・器具・部位メモ（`target_muscles`）・別名（`exercise_aliases`）
 - 進捗チャート（Chart.js 折れ線グラフ）
   - 筋力系: 日付 x 最大重量
   - 有酸素系: 日付 x 最大速度
   - 重量単位（kg / lbs / level）は変換しない。チャートはデータに存在する単位ごとに別系列（dataset）として描画し、凡例に単位を表示する
-  - ツールチップにセット詳細を表示
+  - ツールチップは同一日付の各単位系列の値をまとめて表示（セット詳細は含まない）
 - 期間フィルタ: 1ヶ月 / 3ヶ月 / 6ヶ月 / 全期間（htmx で部分更新）
 - 履歴テーブル: 全セッションにおける当該種目の記録一覧
 
@@ -121,7 +123,7 @@
 ├──────────────────────────────────┤
 │  シーテッドロウ                    │
 │  カテゴリ: 筋力  器具: マシン      │
-│  対象: 背中                       │
+│  部位メモ: 背中                   │
 │  別名: Seated Row                 │
 ├──────────────────────────────────┤
 │  [1M] [3M] [6M] [全期間]         │
@@ -134,8 +136,8 @@
 │  └──────────────────────────┘    │
 ├──────────────────────────────────┤
 │  日付       | 重量  | セット     │
-│  2026/08/16 | 50lbs | 20x50,... │
-│  2026/08/01 | 45lbs | 15x45,... │
+│  2026-08-16 | 50lbs | 20x50,... │
+│  2026-08-01 | 45lbs | 15x45,... │
 └──────────────────────────────────┘
 ```
 
@@ -165,17 +167,17 @@
 │ ┌──────────────────────────────┐ │
 │ │ シーテッドロウ     筋力       │ │
 │ │ 器具: マシン                  │ │
-│ │ 最終: 2026/08/16  回数: 12   │ │
+│ │ 最終: 2026-08-16  回数: 12   │ │
 │ └──────────────────────────────┘ │
 │ ┌──────────────────────────────┐ │
 │ │ ウォーキング       有酸素     │ │
 │ │ 器具: トレッドミル            │ │
-│ │ 最終: 2026/08/16  回数: 24   │ │
+│ │ 最終: 2026-08-16  回数: 24   │ │
 │ └──────────────────────────────┘ │
 │ ┌──────────────────────────────┐ │
 │ │ レッグプレス       筋力       │ │
 │ │ 器具: マシン                  │ │
-│ │ 最終: 2026/08/15  回数: 8    │ │
+│ │ 最終: 2026-08-15  回数: 8    │ │
 │ └──────────────────────────────┘ │
 └──────────────────────────────────┘
 ```
@@ -186,17 +188,19 @@ Web UI が使用する REST API の一覧。ワークアウトデータは読み
 
 | パス | メソッド | 説明 | クエリパラメータ | レスポンス概形 |
 |------|----------|------|------------------|----------------|
-| `/api/sessions` | GET | セッション一覧 | `month` (YYYY-MM), `limit`, `offset` | `{sessions: [{id, date, goal, exercise_count, exercise_names[]}], total}` |
-| `/api/sessions/:id` | GET | セッション詳細 | -- | `{session: {id, date, goal, body_condition, notes, target_muscles_summary[], exercises: [{id, exercise_id, name, status, equipment_note, form_cues, target_muscles, sets[], planned_sets[]}]}}` |
-| `/api/sessions/:id/photos` | GET | 写真メタデータ一覧 | -- | `{photos: [{id, content_type, size_bytes, created_at, url}]}` |
-| `/api/sessions/:id/photos/:photoId` | GET | R2 の画像本体をストリーミング | -- | 画像本体（`private, no-store`, `nosniff`, inline） |
-| `/api/sessions/:id/photos` | POST | 写真を 1 枚追加 | multipart `photo` | 201 `{photo: {...}}`、400/401/403/404/409 |
-| `/api/sessions/:id/photos/:photoId` | DELETE | 写真を削除 | -- | 204、401/403/404 |
-| `/api/exercises` | GET | 種目一覧 | `category`, `q` | `{exercises: [{id, name, category, equipment, target_muscles, last_performed, total_sessions}]}` |
-| `/api/exercises/:id` | GET | 種目詳細 | -- | `{exercise: {id, name, category, equipment, target_muscles, aliases[]}}` |
+| `/api/sessions` | GET | セッション一覧 | `month` (YYYY-MM), `limit`, `offset` | `{sessions: [{id, date, day_of_week, goal, body_condition, exercise_count, exercise_names[]}], total}` |
+| `/api/sessions/:id` | GET | セッション詳細 | -- | `{session: {id, date, day_of_week, goal, body_condition, notes, target_muscles_summary[], atlas_muscles_summary, exercises: [{id, exercise_id, name, status, equipment_note, form_cues, target_muscles, atlas_muscles, sets[], planned_sets[]}]}}` |
+| `/api/sessions/:id/photos` | GET | 写真メタデータ一覧 | -- | `{photos: [{id, content_type, size_bytes, created_at, url}]}`、400/401/404 |
+| `/api/sessions/:id/photos/:photoId` | GET | R2 の画像本体をストリーミング | -- | 画像本体（`private, no-store`, `nosniff`, inline）、400/401/404 |
+| `/api/sessions/:id/photos` | POST | 写真を 1 枚追加 | multipart `photo` | 201 `{photo: {...}}`、400/401/403/404/409/411/413 |
+| `/api/sessions/:id/photos/:photoId` | DELETE | 写真を削除 | -- | 204、400/401/403/404 |
+| `/api/exercises` | GET | 種目一覧 | `category`, `q` | `{exercises: [{id, name, category, equipment, target_muscles, atlas_muscles, last_performed, total_sessions}]}` |
+| `/api/exercises/:id` | GET | 種目詳細 | -- | `{exercise: {id, name, category, equipment, target_muscles, atlas_muscles, aliases[]}}` |
 | `/api/exercises/:id/stats` | GET | 種目別統計 | `from`, `to`, `period` (1m/3m/6m/all) | `{stats: [{date, max_weight_by_unit, total_reps, total_sets, sets[]}]}` |
 
 曜日やその他の表示用文字列は、サーバ側で `session_date` から導出してレスポンスに含める。DB カラムには曜日を保存しない。
+
+`GET /api/sessions` は `month` 省略時に UTC の当月を返すが、SSR の `GET /` は Asia/Tokyo の当月を使う（実装上の不整合で、JST 0〜9 時の月初に差が出る）。
 
 ## 技術詳細
 
@@ -212,6 +216,8 @@ Hono JSX を使った SSR の構成:
 - `src/views/components/` -- 再利用可能なコンポーネント
   - `session-card.tsx` -- セッションカード
   - `set-table.tsx` -- セット表示テーブル
+  - `session-photos.tsx` -- 写真の一覧・削除・アップロードフォーム断片
+  - `muscle-map.tsx` -- Human Atlas の筋肉マップ（Three.js）
   - `chart.tsx` -- Chart.js 用データ埋め込みコンポーネント
 
 ### htmx による部分更新
@@ -224,7 +230,7 @@ htmx を使い、ページ全体の再読み込みなしで部分更新を行う
 <a href="/?month=2026-07"
    hx-get="/?month=2026-07"
    hx-target="#session-content"
-   hx-swap="innerHTML"
+   hx-swap="innerHTML transition:true"
    hx-push-url="true">
   前月
 </a>
@@ -237,12 +243,13 @@ htmx を使い、ページ全体の再読み込みなしで部分更新を行う
 ```html
 <!-- 種目別進捗: 期間フィルタ -->
 <!-- SSR ルート自身（GET /exercises/:id）に HX-Request ヘッダー付きでリクエストする -->
-<a href="/exercises/1?period=3m"
+<button type="button"
    hx-get="/exercises/1?period=3m"
-   hx-target="#chart-container"
-   hx-swap="innerHTML">
+   hx-target="#chart-section"
+   hx-swap="innerHTML transition:true"
+   hx-push-url="true">
   3ヶ月
-</a>
+</button>
 ```
 
 htmx のリクエストには `HX-Request` ヘッダーが付与される。サーバ側ではこのヘッダーを検出し、部分 HTML（レイアウトなし）を返すか、フルページ HTML を返すかを切り替える。
@@ -295,6 +302,10 @@ Chart.js はバンドルに含めず CDN から読み込む。データの受け
 - `/css/style.css` -- スタイルシート（モバイルファースト設計）
 - `/js/chart-init.js` -- Chart.js 初期化スクリプト
 - `/js/session-photos.js` -- 写真の逐次アップロード・削除・断片更新
+- `/js/muscle-atlas.js` -- Human Atlas の 3D 表示初期化
+- `/js/vendor/three.module.js` -- Three.js 本体（MIT。`THREE-LICENSE.txt` を同梱）
+- `/models/human-atlas/*` -- 筋肉モデル（`atlas.json` / `muscles.bin.gz`）と `ATTRIBUTION.md`、`HUMAN-ATLAS-LICENSE.txt`
+- `/skills/log-workout.zip` -- claude.ai などへ配布する Skill zip（`/skills/log-workout/SKILL.md` も配信）
 
 写真グリッドは既存の `--label`、`--bg-tertiary`、`--separator`、`--accent`、`--radius-card`、`--shadow` トークンを使い、375px 幅では 2 列にする。ダークモードでも同じセマンティックトークンを利用する。
 
@@ -316,8 +327,10 @@ Chart.js はバンドルに含めず CDN から読み込む。データの受け
 ```bash
 git clone https://github.com/ashemag/human-atlas /tmp/human-atlas
 git -C /tmp/human-atlas checkout 1c38bf35c254a891200d3cedecfd57abebe83d8d
-node scripts/import-human-atlas.mjs /tmp/human-atlas
+node scripts/import-human-atlas.mjs /tmp/human-atlas /path/to/extracted/BodyParts3D_3.0_obj_99
 node scripts/vendor-three.mjs
 ```
+
+第 2 引数には、公式 BodyParts3D 3.0（99% ポリゴン削減版）のアーカイブから展開した OBJ ディレクトリを渡す。省略すると取り込みスクリプトは例外で終了する。入手・展開とハッシュ固定の手順は [anatomy.md の「補完したモデルの出典と再現」](./anatomy.md#補完したモデルの出典と再現) を参照。
 
 Three.jsはlockfileの固定版を配信ファイル・MITライセンスとともに同梱する。モデル変更時は既存IDの維持、gzip読込、部位対応、前後・透過表示、モバイル幅を確認する。

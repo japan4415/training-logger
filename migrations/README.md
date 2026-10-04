@@ -53,7 +53,7 @@ pnpm exec wrangler d1 migrations apply training-logger-db --remote
 
 ## CI での構文検証
 
-CI パイプライン (`ci.yml`) の PR チェックで `wrangler d1 migrations apply training-logger-db --local` を実行し、マイグレーション SQL の構文を検証する。構文エラーがあると CI が失敗し、マージがブロックされる。
+CI パイプライン (`ci.yml`) の PR チェックで `pnpm exec wrangler d1 migrations apply training-logger-db --local` を実行し、マイグレーション SQL の構文を検証する。構文エラーがあると CI が失敗し、マージがブロックされる。
 
 ## 注意事項
 

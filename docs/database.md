@@ -130,6 +130,7 @@ erDiagram
 | `category` | TEXT | NOT NULL DEFAULT 'strength' | カテゴリ。`strength` / `cardio` / `flexibility` / `other` のいずれか |
 | `equipment` | TEXT | | 器具（例: "カイザー空圧マシン"）。自重種目は NULL |
 | `target_muscles` | TEXT | | 対象部位（例: "背中"） |
+| `atlas_muscles` | TEXT | CHECK(atlas_muscles IS NULL OR (json_valid(atlas_muscles) AND json_type(atlas_muscles) = 'object')) | `0002_atlas_muscles.sql` で追加。Atlas 筋肉の割当 JSON object（`{"primary":[],"secondary":[],"unavailable":[]}`）。NULL は従来の部位メモ表示 |
 | `notes` | TEXT | | メモ |
 | `created_at` | TEXT | NOT NULL DEFAULT (UTC) | 作成日時 ISO 8601 UTC |
 | `updated_at` | TEXT | NOT NULL DEFAULT (UTC) | 更新日時 ISO 8601 UTC |
@@ -166,6 +167,8 @@ erDiagram
 インデックス:
 
 - `idx_workout_sessions_date` -- `session_date` で範囲検索・ソート
+
+> **現状の制約**: `updated_at` は「更新日時」と定義しているが、同日再記録時にメタデータ（`goal` / `body_condition` / `notes`）を更新する `updateSession` は `updated_at` を書き換えない。DB 層で `updated_at` を更新するのは `set_exercise_muscles` による `exercises.updated_at` だけである。
 
 ### session_photos (セッション写真)
 
@@ -404,9 +407,9 @@ UNIQUE 制約自体が NOCASE であるため、大文字小文字違いの重�
 | 正規名 | 想定される別名 |
 |---|---|
 | カイザーチェストプレス | Keiser Chest Press, カイザーCP |
-| カイザーラットプルダウン | Keiser Lat Pulldown, カイザーラット |
-| グッドモーニングEX | グッドモーニングエクステンション, Good Morning EX |
-| スポバンド肩まわし | スポーツバンド肩回し |
+| ラットプルダウン | Keiser Lat Pulldown, カイザーラットプルダウン, カイザーラット |
+| グッドモーニング | グッドモーニングEX, グッドモーニングエクステンション, Good Morning EX |
+| バンド肩回し | スポバンド肩まわし, スポーツバンド肩回し |
 
 別名は `register_exercise` ツールの `aliases` パラメータで登録する。LLM が日常会話で使われるバリエーションを予測し、種目登録時に併せて登録することを想定している。
 
@@ -428,13 +431,13 @@ migrations/
 
 | 操作 | コマンド |
 |---|---|
-| 新規マイグレーション作成 | `wrangler d1 migrations create <name>` |
-| ローカル適用（開発） | `wrangler d1 migrations apply --local` |
-| リモート適用（本番） | `wrangler d1 migrations apply --remote` |
+| 新規マイグレーション作成 | `pnpm exec wrangler d1 migrations create training-logger-db <name>` |
+| ローカル適用（開発） | `pnpm exec wrangler d1 migrations apply training-logger-db --local` |
+| リモート適用（本番） | `pnpm exec wrangler d1 migrations apply training-logger-db --remote` |
 
 ### CI での構文検証
 
-CI パイプラインでは `wrangler d1 migrations apply --local` を実行してマイグレーション SQL の構文を検証する。詳細は [デプロイメント](./deployment.md) を参照。
+CI パイプラインでは `pnpm exec wrangler d1 migrations apply training-logger-db --local` を実行してマイグレーション SQL の構文を検証する。詳細は [デプロイメント](./deployment.md) を参照。
 
 ## データマッピング検証
 
@@ -457,16 +460,18 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 | 2 | ベンチステップ | strength | NULL | NULL |
 | 3 | バランスボールスクワット | strength | NULL | NULL |
 | 4 | カーフレイズ | strength | NULL | NULL |
-| 5 | スポバンド肩まわし | flexibility | NULL | NULL |
+| 5 | バンド肩回し | flexibility | NULL | NULL |
 | 6 | カイザーチェストプレス | strength | カイザー空圧マシン | NULL |
-| 7 | カイザーラットプルダウン | strength | カイザー空圧マシン | NULL |
+| 7 | ラットプルダウン | strength | カイザー空圧マシン | NULL |
 | 8 | ストレッチボード | flexibility | NULL | NULL |
-| 9 | グッドモーニングEX | strength | NULL | もも裏 |
+| 9 | グッドモーニング | strength | NULL | もも裏 |
 | 10 | アダクター | strength | NULL | NULL |
 | 11 | アブダクター | strength | NULL | NULL |
 | 12 | シーテッドロウ | strength | NULL | NULL |
 | 13 | バタフライ | strength | NULL | NULL |
 | 14 | レッグレイズ | strength | NULL | NULL |
+
+手書きノートの表記（スポバンド肩まわし・カイザーラットプルダウン・グッドモーニングEX）は正規名の別名（`register_exercise` の `aliases`）として登録する。`src/domain/atlas-profiles.json` の初期割当はプロファイルの `names` と種目の `name` だけを照合する（`exercise_aliases` は参照しない）ため、別名のままでは既定の Atlas 割当は付かない。
 
 ### 2026-08-15 のセッション
 
@@ -480,9 +485,9 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 | 2 | 1 | 2 | ベンチステップ | 2 | completed | 木の台・小 | NULL | NULL |
 | 3 | 1 | 3 | バランスボールスクワット | 3 | completed | NULL | NULL | NULL |
 | 4 | 1 | 4 | カーフレイズ | 4 | completed | NULL | NULL | NULL |
-| 5 | 1 | 5 | スポバンド肩まわし | 5 | completed | NULL | NULL | NULL |
+| 5 | 1 | 5 | バンド肩回し | 5 | completed | NULL | NULL | NULL |
 | 6 | 1 | 6 | カイザーチェストプレス | 6 | completed | NULL | NULL | NULL |
-| 7 | 1 | 7 | カイザーラットプルダウン | 7 | completed | NULL | NULL | NULL |
+| 7 | 1 | 7 | ラットプルダウン | 7 | completed | NULL | NULL | NULL |
 
 *(種目名) 列は参照用。実テーブルには存在しない。*
 
@@ -514,7 +519,7 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 | 1 | 0 | 20 |
 | 2 | 0 | 20 |
 
-**スポバンド肩まわし** (session_exercise_id=5):
+**バンド肩回し** (session_exercise_id=5):
 
 | set_order | is_planned | reps |
 |---|---|---|
@@ -529,7 +534,7 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 | 2 | 0 | 20 | 10 | level |
 | 3 | 0 | 20 | 15 | level |
 
-**カイザーラットプルダウン** (session_exercise_id=7):
+**ラットプルダウン** (session_exercise_id=7):
 
 | set_order | is_planned | reps | weight_value | weight_unit |
 |---|---|---|---|---|
@@ -544,7 +549,7 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 |---|---|---|---|---|---|---|---|---|
 | 8 | 2 | 1 | ウォーキング | 1 | completed | NULL | NULL | NULL |
 | 9 | 2 | 8 | ストレッチボード | 2 | completed | NULL | NULL | 20度がちょうど |
-| 10 | 2 | 9 | グッドモーニングEX | 3 | completed | 2kgバー | NULL | NULL |
+| 10 | 2 | 9 | グッドモーニング | 3 | completed | 2kgバー | NULL | NULL |
 | 11 | 2 | 10 | アダクター | 4 | completed | NULL | NULL | NULL |
 | 12 | 2 | 11 | アブダクター | 5 | completed | NULL | NULL | NULL |
 | 13 | 2 | 12 | シーテッドロウ | 6 | completed | NULL | 背中の空間をつぶす | NULL |
@@ -570,7 +575,7 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 |---|---|---|
 | 1 | 0 | 20 |
 
-**グッドモーニングEX** (session_exercise_id=10):
+**グッドモーニング** (session_exercise_id=10):
 
 | set_order | is_planned | reps | weight_value | weight_unit |
 |---|---|---|---|---|
@@ -632,7 +637,7 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 - [x] **計画 vs 実績** -- `is_planned` フラグで区別（レッグレイズ: 計画 20x2 -> 実績 20/10/10）
 - [x] **同日同種目複数回** -- `session_exercises` の `display_order` で区別（8/16 ウォーキングが order 1 と 9）
 - [x] **フォームキュー** -- `session_exercises.form_cues` に改行区切りで格納（レッグレイズ: 3つのキュー）
-- [x] **器具メモ** -- `session_exercises.equipment_note`（ベンチステップ "木の台・小"、グッドモーニングEX "2kgバー"）
+- [x] **器具メモ** -- `session_exercises.equipment_note`（ベンチステップ "木の台・小"、グッドモーニング "2kgバー"）
 - [x] **体調メモ** -- `workout_sessions.body_condition`（"左足首・膝の怪我歴あり、少し不安"）
 - [x] **目的** -- `workout_sessions.goal`（"ダイエット"）
 - [x] **セットごとの重量差** -- セット単位で `weight_value` を個別記録（アダクター 50 lbs / 45 lbs）
@@ -674,7 +679,7 @@ CI パイプラインでは `wrangler d1 migrations apply --local` を実行し�
 
 ## Atlas筋肉の構造化
 
-`migrations/0002_atlas_muscles.sql` で種目マスタへ nullable TEXTの `atlas_muscles` を追加する。値は `{"primary":["FJ1447","FJ1447M"],"secondary":[],"unavailable":[]}` のJSONオブジェクト。primary/secondaryは配信Atlasの筋肉ID、unavailableはモデル未収録の筋肉名。アプリ層でID実在・配列・重複・主優先を検証する。左右・筋頭・筋部を個別IDで選べる。
+`migrations/0002_atlas_muscles.sql` で種目マスタへ nullable TEXT の `atlas_muscles` を追加する。列定義には `CHECK(atlas_muscles IS NULL OR (json_valid(atlas_muscles) AND json_type(atlas_muscles) = 'object'))` があり、JSON object 以外は保存できない。値は `{"primary":["FJ1447","FJ1447M"],"secondary":[],"unavailable":[]}` のJSONオブジェクト。primary/secondaryは配信Atlasの筋肉ID、unavailableはモデル未収録の筋肉名。アプリ層でID実在・配列・重複・主優先を検証する。左右・筋頭・筋部を個別IDで選べる。
 
 NULLは従来の部位名による参考表示、空の3配列は明示的に対象筋なしを意味する。既存 `target_muscles` は変更しない。移行時はレビュー済み14種目と明示した別名の完全一致に限って初期割当を保存する。未知種目に推測で割当は付けない。新規登録では同じプロファイルを既定値とし、指定された割当があればそちらを優先する。更新はMCPの `set_exercise_muscles` から行う。
 

@@ -4,9 +4,9 @@
 
 ### 前提条件
 
-- Node.js 22+
-- pnpm
-- wrangler（`pnpm` 経由でプロジェクトローカルにインストールされる）
+- Node.js 22 または 24 LTS（CI は 22）
+- pnpm（`corepack enable` で有効化。本リポジトリは `packageManager: pnpm@10.34.6` を指定しており corepack が該当版を取得する。corepack が同梱されない Node.js 25 以降では `npm install -g corepack` を先に実行する）
+- wrangler（`pnpm` 経由でプロジェクトローカルにインストールされる。コマンドは `pnpm exec wrangler` で固定版を使う）
 
 ### セットアップ
 
@@ -14,11 +14,16 @@
 git clone https://github.com/japan4415/training-logger.git
 cd training-logger
 pnpm install
-wrangler d1 migrations apply training-logger-db --local
+pnpm exec wrangler d1 migrations apply training-logger-db --local
 pnpm run dev
 ```
 
-`pnpm run dev` は `wrangler dev` を実行し、ローカル D1 を使った開発サーバを起動する。
+`pnpm run dev` は `wrangler dev` を実行し、ローカル D1 を使った開発サーバを起動する。既定では http://localhost:8787 で待ち受ける。`create_feedback`（`GITHUB_TOKEN`）や写真 API をローカルで検証する場合は、任意で `cp .dev.vars.example .dev.vars` を用意する（起動自体には不要）。コピー後は次の編集が必要:
+
+- `create_feedback` を試す場合、`GITHUB_TOKEN=github_pat_xxx` のプレースホルダ行は truthy のためそのままでは GitHub API が 401 になる。実際の fine-grained PAT（`Issues: Read and write`）に置き換えると `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` の先へ実際に起票される（既定は本番リポジトリ。試さない場合は行を削除すると手動起票 URL の案内にフォールバックする）
+- 写真 API を試す場合は `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` のコメントを外す（localhost / 127.0.0.1 のときだけ有効）
+
+マイグレーションは dev 起動前に適用する（先に dev を起動すると空の DB になる）。
 
 ### package.json scripts
 
@@ -29,6 +34,7 @@ pnpm run dev
 | `typecheck` | `tsc --noEmit` | TypeScript 型チェック |
 | `lint` | `biome check .` | Biome による lint チェック |
 | `format` | `biome format --write .` | Biome によるフォーマット |
+| `build:skill` | `node scripts/build-skill.mjs` | Skill 配布物（`public/skills/`）の生成 |
 | `test` | `vitest run` | テストの実行 |
 
 ## Issue 駆動開発
@@ -58,10 +64,12 @@ Issue 作成                    Claude Code が Issue を読む
 ### ブランチ命名規則
 
 ```
-feature/issue-<番号>-<説明>
+feat/<説明>   # 新機能
+fix/<説明>    # バグ修正
+docs/<説明>   # ドキュメント
 ```
 
-例: `feature/issue-3-data-access-layer`
+説明に issue 番号を含めることを推奨する。例: `fix/issue-15-docs-sync`
 
 ### PR 本文に `Closes #<番号>` を含める
 
@@ -73,7 +81,7 @@ Issue の記述は、**別セッションの Claude Code（別モデル）が Is
 
 ## Issue 記述規約
 
-以下のテンプレートを使って Issue を記述する。将来 `.github/ISSUE_TEMPLATE/` にも配置予定。
+以下のテンプレートを使って Issue を記述する。`.github/ISSUE_TEMPLATE/feature-request.md` に配置済み。
 
 ```markdown
 ## 背景
@@ -111,7 +119,7 @@ Issue の記述は、**別セッションの Claude Code（別モデル）が Is
 ### SQL
 
 - SQL クエリは必ず prepared statement（`.bind()`）を使用する。文字列結合による SQL 組み立ては禁止
-- SQL ロジックは `src/db/` に集約する
+- SQL ロジックは `src/db/` に集約する。ただし一部の SSR ビュー（種目進捗・種目一覧・前後セッション取得）は表示専用の集計 SQL をビュー内に直接持つ
 
 ### MCP ツール
 
@@ -125,6 +133,8 @@ Issue の記述は、**別セッションの Claude Code（別モデル）が Is
 | テスト対象 | 種別 | 内容 |
 |------------|------|------|
 | `src/db/` | ユニットテスト | CRUD 操作の検証。実 D1 バインディングを使用 |
+| `src/domain/` | ユニットテスト | Atlas 筋肉割当の検証・集約 |
+| `src/security/` | ユニットテスト | Access JWT の検証 |
 | `src/mcp/` | 統合テスト | MCP ハンドラ・ツール呼び出しの E2E。バリデーション・正常系・異常系 |
 | `src/api/` | 統合テスト | REST API のリクエスト/レスポンス検証 |
 | `src/views/` | 統合テスト | SSR ビューのレンダリング・htmx 部分更新の検証 |
