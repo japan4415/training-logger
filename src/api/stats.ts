@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { getExerciseById } from "../db/exercises.js";
 import { getHistory } from "../db/queries.js";
 import type { SetRow } from "../db/types.js";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import type { Bindings } from "../env.js";
 
 const VALID_PERIODS = new Set(["1m", "3m", "6m", "all"]);
@@ -98,7 +99,7 @@ export async function getExerciseStatsHandler(
 	const dateFrom = resolveFromDate(fromParam, periodParam);
 	const dateTo = toParam;
 
-	const details = await getHistory(db, {
+	const details = await getHistory(db, DEFAULT_USER_ID, {
 		exerciseName: exercise.name,
 		dateFrom,
 		dateTo,

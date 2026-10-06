@@ -32,13 +32,22 @@ const SERVER_INSTRUCTIONS = `\
 「reps/weight」形式（例「20/10」= 20回・重量10）です。複数並ぶ場合は各々を独立したセットとして扱ってください。単位不明なら get_history で前回を参照するかユーザーに確認してください。`;
 
 /**
+ * Per-request authenticated context. Phase 2 always passes the single default
+ * user; Phase 4 will bind the internal users.id resolved from the OAuth props.
+ */
+export interface McpContext {
+	userId: number;
+}
+
+/**
  * Create a new McpServer instance configured for training-logger.
  *
  * Called once per request (stateless design).
  *
  * @param env - Worker bindings (DB etc.) passed to each tool registrar.
+ * @param ctx - Per-request context carrying the internal userId.
  */
-export function createMcpServer(env: Bindings): McpServer {
+export function createMcpServer(env: Bindings, ctx: McpContext): McpServer {
 	const server = new McpServer(
 		{
 			name: "training-logger",
@@ -50,9 +59,9 @@ export function createMcpServer(env: Bindings): McpServer {
 	);
 
 	registerExerciseTools(server, env);
-	registerWorkoutTools(server, env);
-	registerHistoryTools(server, env);
-	registerPhotoTools(server, env);
+	registerWorkoutTools(server, env, ctx.userId);
+	registerHistoryTools(server, env, ctx.userId);
+	registerPhotoTools(server, env, ctx.userId);
 	registerFeedbackTools(server, env);
 
 	return server;

@@ -9,6 +9,7 @@ import {
 } from "../db/session-photos.js";
 import { getSessionById } from "../db/sessions.js";
 import type { SessionPhotoRow } from "../db/types.js";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import type { Bindings } from "../env.js";
 import {
 	requireAccessUser,
@@ -38,10 +39,10 @@ export async function listPhotos(c: AppContext) {
 	if (!auth.ok) return auth.response;
 	const id = sessionId(c);
 	if (!id) return c.json({ error: "Invalid session ID" }, 400);
-	if (!(await getSessionById(c.env.DB, id))) {
+	if (!(await getSessionById(c.env.DB, DEFAULT_USER_ID, id))) {
 		return c.json({ error: "Session not found" }, 404);
 	}
-	const photos = await listExistingSessionPhotos(c.env, id);
+	const photos = await listExistingSessionPhotos(c.env, DEFAULT_USER_ID, id);
 	return c.json({ photos: photos.map(photoJson) });
 }
 
@@ -52,13 +53,14 @@ export async function getPhoto(c: AppContext) {
 	if (!id) return c.json({ error: "Invalid session ID" }, 400);
 	const photo = await getSessionPhoto(
 		c.env.DB,
+		DEFAULT_USER_ID,
 		id,
 		c.req.param("photoId") ?? "",
 	);
 	if (!photo) return c.json({ error: "Photo not found" }, 404);
 	const object = await c.env.PHOTOS.get(photo.r2_key);
 	if (!object) {
-		await removeMissingSessionPhotoMetadata(c.env.DB, photo);
+		await removeMissingSessionPhotoMetadata(c.env.DB, DEFAULT_USER_ID, photo);
 		return c.json({ error: "Photo not found" }, 404);
 	}
 	return new Response(object.body, {
@@ -78,7 +80,7 @@ export async function createPhoto(c: AppContext) {
 	if (!auth.ok) return auth.response;
 	const id = sessionId(c);
 	if (!id) return c.json({ error: "invalid_request" }, 400);
-	const session = await getSessionById(c.env.DB, id);
+	const session = await getSessionById(c.env.DB, DEFAULT_USER_ID, id);
 	if (!session) return c.json({ error: "Session not found" }, 404);
 	const contentLengthHeader = c.req.header("Content-Length");
 	if (contentLengthHeader === undefined) {
@@ -107,6 +109,7 @@ export async function createPhoto(c: AppContext) {
 	}
 	const result = await storeSessionPhoto(
 		c.env,
+		DEFAULT_USER_ID,
 		session,
 		new Uint8Array(await file.arrayBuffer()),
 	);
@@ -133,6 +136,7 @@ export async function removePhoto(c: AppContext) {
 	if (!id) return c.json({ error: "Invalid session ID" }, 400);
 	const deleted = await deleteSessionPhoto(
 		c.env,
+		DEFAULT_USER_ID,
 		id,
 		c.req.param("photoId") ?? "",
 	);

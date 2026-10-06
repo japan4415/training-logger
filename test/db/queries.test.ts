@@ -44,46 +44,46 @@ async function seedTestData(): Promise<{
 	});
 
 	// Session 1: 2026-08-15
-	const { session: s1 } = await getOrCreateSession(env.DB, {
+	const { session: s1 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-15",
 		goal: "ダイエット",
 	});
-	const se1bench = await createSessionExercise(env.DB, {
+	const se1bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se1bench.id, [
+	await replaceSets(env.DB, 1, se1bench.id, [
 		{ reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ reps: 8, weightValue: 65, weightUnit: "kg" },
 	]);
-	const se1walk = await createSessionExercise(env.DB, {
+	const se1walk = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: walking.id,
 	});
-	await replaceSets(env.DB, se1walk.id, [
+	await replaceSets(env.DB, 1, se1walk.id, [
 		{ durationMinutes: 10, speedMin: 3.5, speedMax: 5.0, inclinePercent: 0.5 },
 	]);
 
 	// Session 2: 2026-08-16
-	const { session: s2 } = await getOrCreateSession(env.DB, {
+	const { session: s2 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-16",
 	});
-	const se2bench = await createSessionExercise(env.DB, {
+	const se2bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s2.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se2bench.id, [
+	await replaceSets(env.DB, 1, se2bench.id, [
 		{ isPlanned: true, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: true, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: false, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: false, reps: 8, weightValue: 70, weightUnit: "kg" },
 		{ isPlanned: false, reps: 6, weightValue: 75, weightUnit: "kg" },
 	]);
-	const se2stretch = await createSessionExercise(env.DB, {
+	const se2stretch = await createSessionExercise(env.DB, 1, {
 		sessionId: s2.id,
 		exerciseId: stretch.id,
 	});
-	await replaceSets(env.DB, se2stretch.id, [{ angleDegrees: 20 }]);
+	await replaceSets(env.DB, 1, se2stretch.id, [{ angleDegrees: 20 }]);
 
 	return {
 		benchId: bench.id,
@@ -117,7 +117,7 @@ describe("queries", () => {
 
 	describe("getHistory", () => {
 		it("should return all sessions when no filters", async () => {
-			const history = await getHistory(env.DB);
+			const history = await getHistory(env.DB, 1);
 			expect(history).toHaveLength(2);
 			// Descending date order
 			expect(history[0].session.session_date).toBe("2026-08-16");
@@ -125,7 +125,7 @@ describe("queries", () => {
 		});
 
 		it("should include exercises and sets in results", async () => {
-			const history = await getHistory(env.DB);
+			const history = await getHistory(env.DB, 1);
 			// Session 2026-08-16 has 2 exercises
 			const s2 = history[0];
 			expect(s2.exercises).toHaveLength(2);
@@ -135,7 +135,7 @@ describe("queries", () => {
 		});
 
 		it("should filter by exercise name (exact match)", async () => {
-			const history = await getHistory(env.DB, {
+			const history = await getHistory(env.DB, 1, {
 				exerciseName: "ウォーキング",
 			});
 			expect(history).toHaveLength(1);
@@ -146,7 +146,7 @@ describe("queries", () => {
 		});
 
 		it("should filter by exercise name via alias (3-stage resolution)", async () => {
-			const history = await getHistory(env.DB, {
+			const history = await getHistory(env.DB, 1, {
 				exerciseName: "Bench Press",
 			});
 			// ベンチプレス appears in both sessions
@@ -158,14 +158,14 @@ describe("queries", () => {
 		});
 
 		it("should return empty for non-existent exercise name", async () => {
-			const history = await getHistory(env.DB, {
+			const history = await getHistory(env.DB, 1, {
 				exerciseName: "存在しない種目",
 			});
 			expect(history).toHaveLength(0);
 		});
 
 		it("should filter by date range", async () => {
-			const history = await getHistory(env.DB, {
+			const history = await getHistory(env.DB, 1, {
 				dateFrom: "2026-08-16",
 				dateTo: "2026-08-16",
 			});
@@ -174,13 +174,13 @@ describe("queries", () => {
 		});
 
 		it("should limit by lastNSessions", async () => {
-			const history = await getHistory(env.DB, { lastNSessions: 1 });
+			const history = await getHistory(env.DB, 1, { lastNSessions: 1 });
 			expect(history).toHaveLength(1);
 			expect(history[0].session.session_date).toBe("2026-08-16");
 		});
 
 		it("should combine exercise name and date range filters", async () => {
-			const history = await getHistory(env.DB, {
+			const history = await getHistory(env.DB, 1, {
 				exerciseName: "ベンチプレス",
 				dateFrom: "2026-08-16",
 			});
@@ -190,7 +190,7 @@ describe("queries", () => {
 		});
 
 		it("should exclude sets when includeSets is false", async () => {
-			const history = await getHistory(env.DB, { includeSets: false });
+			const history = await getHistory(env.DB, 1, { includeSets: false });
 			expect(history).toHaveLength(2);
 			for (const detail of history) {
 				for (const ex of detail.exercises) {
@@ -200,7 +200,7 @@ describe("queries", () => {
 		});
 
 		it("should include sets by default", async () => {
-			const history = await getHistory(env.DB);
+			const history = await getHistory(env.DB, 1);
 			// Session 2026-08-16, ベンチプレス has 5 sets (2 planned + 3 actual)
 			const s2 = history[0];
 			const benchEntry = s2.exercises.find(
@@ -213,7 +213,7 @@ describe("queries", () => {
 
 	describe("getSessionDetail", () => {
 		it("should return full session with exercises and sets", async () => {
-			const detail = await getSessionDetail(env.DB, session1Id);
+			const detail = await getSessionDetail(env.DB, 1, session1Id);
 			expect(detail).not.toBeNull();
 			const d = detail as SessionDetail;
 			expect(d.session.session_date).toBe("2026-08-15");
@@ -222,7 +222,7 @@ describe("queries", () => {
 		});
 
 		it("should order exercises by display_order", async () => {
-			const detail = await getSessionDetail(env.DB, session1Id);
+			const detail = await getSessionDetail(env.DB, 1, session1Id);
 			expect(detail).not.toBeNull();
 			const d = detail as SessionDetail;
 			expect(d.exercises[0].sessionExercise.display_order).toBe(1);
@@ -233,7 +233,7 @@ describe("queries", () => {
 		});
 
 		it("should include correct sets for each exercise", async () => {
-			const detail = await getSessionDetail(env.DB, session1Id);
+			const detail = await getSessionDetail(env.DB, 1, session1Id);
 			const d = detail as SessionDetail;
 
 			// ベンチプレス: 2 actual sets
@@ -250,7 +250,7 @@ describe("queries", () => {
 		});
 
 		it("should include both planned and actual sets", async () => {
-			const detail = await getSessionDetail(env.DB, session2Id);
+			const detail = await getSessionDetail(env.DB, 1, session2Id);
 			const d = detail as SessionDetail;
 			const bench = d.exercises.find((e) => e.exercise.name === "ベンチプレス");
 			expect(bench).toBeDefined();
@@ -262,21 +262,21 @@ describe("queries", () => {
 		});
 
 		it("should return null for non-existent session", async () => {
-			const detail = await getSessionDetail(env.DB, 9999);
+			const detail = await getSessionDetail(env.DB, 1, 9999);
 			expect(detail).toBeNull();
 		});
 	});
 
 	describe("getExerciseStats", () => {
 		it("should return correct total sessions", async () => {
-			const stats = await getExerciseStats(env.DB, benchId);
+			const stats = await getExerciseStats(env.DB, 1, benchId);
 			expect(stats).not.toBeNull();
 			// ベンチプレス appears in both sessions
 			expect(stats?.totalSessions).toBe(2);
 		});
 
 		it("should return correct max weight (actual only)", async () => {
-			const stats = await getExerciseStats(env.DB, benchId);
+			const stats = await getExerciseStats(env.DB, 1, benchId);
 			expect(stats).not.toBeNull();
 			// Max actual weight is 75kg from session 2
 			expect(stats?.maxWeight).not.toBeNull();
@@ -289,13 +289,13 @@ describe("queries", () => {
 			// The planned sets have 60kg but actual has up to 75kg
 			// If planned were included, 60 would still not be max, but let's
 			// verify by checking actual sets are the only source
-			const stats = await getExerciseStats(env.DB, benchId);
+			const stats = await getExerciseStats(env.DB, 1, benchId);
 			// The max is from actual performance, not planned
 			expect(stats?.maxWeight?.value).toBe(75);
 		});
 
 		it("should return correct session summaries with total reps and sets", async () => {
-			const stats = await getExerciseStats(env.DB, benchId);
+			const stats = await getExerciseStats(env.DB, 1, benchId);
 			expect(stats).not.toBeNull();
 			expect(stats?.sessionSummaries).toHaveLength(2);
 
@@ -315,14 +315,14 @@ describe("queries", () => {
 
 		it("should return null maxWeight for exercise without weight data", async () => {
 			// ウォーキング has no weight_value
-			const stats = await getExerciseStats(env.DB, walkingId);
+			const stats = await getExerciseStats(env.DB, 1, walkingId);
 			expect(stats).not.toBeNull();
 			expect(stats?.maxWeight).toBeNull();
 			expect(stats?.totalSessions).toBe(1);
 		});
 
 		it("should handle exercise with only flexibility data", async () => {
-			const stats = await getExerciseStats(env.DB, stretchId);
+			const stats = await getExerciseStats(env.DB, 1, stretchId);
 			expect(stats).not.toBeNull();
 			expect(stats?.exerciseName).toBe("ストレッチボード");
 			expect(stats?.totalSessions).toBe(1);
@@ -333,25 +333,25 @@ describe("queries", () => {
 		});
 
 		it("should return null for non-existent exercise", async () => {
-			const stats = await getExerciseStats(env.DB, 9999);
+			const stats = await getExerciseStats(env.DB, 1, 9999);
 			expect(stats).toBeNull();
 		});
 
 		it("should count planned-only sessions in totalSessions but not in summaries", async () => {
 			// Create a session with only planned sets for ベンチプレス
-			const { session: s3 } = await getOrCreateSession(env.DB, {
+			const { session: s3 } = await getOrCreateSession(env.DB, 1, {
 				sessionDate: "2026-08-17",
 			});
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId: s3.id,
 				exerciseId: benchId,
 				status: "planned",
 			});
-			await replaceSets(env.DB, se.id, [
+			await replaceSets(env.DB, 1, se.id, [
 				{ isPlanned: true, reps: 10, weightValue: 60, weightUnit: "kg" },
 			]);
 
-			const stats = await getExerciseStats(env.DB, benchId);
+			const stats = await getExerciseStats(env.DB, 1, benchId);
 			expect(stats).not.toBeNull();
 			// totalSessions counts all sessions with this exercise
 			expect(stats?.totalSessions).toBe(3);

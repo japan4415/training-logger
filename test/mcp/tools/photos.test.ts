@@ -22,17 +22,17 @@ describe("MCP photo tools", () => {
 	beforeAll(() => applyMigrations(env.DB));
 	beforeEach(async () => {
 		await cleanDatabase(env.DB);
-		const listed = await env.PHOTOS.list({ prefix: "sessions/" });
+		const listed = await env.PHOTOS.list();
 		if (listed.objects.length) {
 			await env.PHOTOS.delete(listed.objects.map((object) => object.key));
 		}
 	});
 
 	it("creates a browser upload link for an existing session", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const result = await createPhotoUploadLinkHandler(env, {
+		const result = await createPhotoUploadLinkHandler(env, 1, {
 			date: "2026-09-14",
 		});
 		expect(result).toMatchObject({
@@ -44,17 +44,17 @@ describe("MCP photo tools", () => {
 	});
 
 	it("returns an MCP error when the session does not exist", async () => {
-		const result = await createPhotoUploadLinkHandler(env, {
+		const result = await createPhotoUploadLinkHandler(env, 1, {
 			date: "2026-09-14",
 		});
 		expect(result).toMatchObject({ isError: true });
 	});
 
 	it("stores a minimal PNG decoded from base64", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const result = await uploadSessionPhotoHandler(env, {
+		const result = await uploadSessionPhotoHandler(env, 1, {
 			date: "2026-09-14",
 			data_base64: base64(PNG),
 			content_type: "image/png",
@@ -70,7 +70,7 @@ describe("MCP photo tools", () => {
 		expect("url" in result && result.url).toBe(
 			`/api/sessions/${session.id}/photos/${"photo_id" in result ? result.photo_id : ""}`,
 		);
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(1);
 	});
 
 	it.each([1, 2, 3, 256])(
@@ -100,9 +100,9 @@ describe("MCP photo tools", () => {
 		["invalid trailing character in a large input", `${"A".repeat(1224643)}!`],
 		["too many characters", "A".repeat(PHOTO_MAX_BASE64_CHARS + 1)],
 	])("rejects invalid base64 containing %s", async (_case, dataBase64) => {
-		await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });
+		await getOrCreateSession(env.DB, 1, { sessionDate: "2026-09-14" });
 		expect(
-			await uploadSessionPhotoHandler(env, {
+			await uploadSessionPhotoHandler(env, 1, {
 				date: "2026-09-14",
 				data_base64: dataBase64,
 			}),
@@ -110,23 +110,23 @@ describe("MCP photo tools", () => {
 	});
 
 	it("rejects a declared content type that differs from magic bytes", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		expect(
-			await uploadSessionPhotoHandler(env, {
+			await uploadSessionPhotoHandler(env, 1, {
 				date: "2026-09-14",
 				data_base64: base64(PNG),
 				content_type: "image/jpeg",
 			}),
 		).toMatchObject({ isError: true, error: "unsupported_type" });
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(0);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(0);
 	});
 
 	it("rejects bytes without a supported image signature", async () => {
-		await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });
+		await getOrCreateSession(env.DB, 1, { sessionDate: "2026-09-14" });
 		expect(
-			await uploadSessionPhotoHandler(env, {
+			await uploadSessionPhotoHandler(env, 1, {
 				date: "2026-09-14",
 				data_base64: base64(new TextEncoder().encode("text")),
 			}),
@@ -134,7 +134,7 @@ describe("MCP photo tools", () => {
 	});
 
 	it("returns too_large when decoded bytes exceed 10 MiB", async () => {
-		await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });
+		await getOrCreateSession(env.DB, 1, { sessionDate: "2026-09-14" });
 		const oversized = new Uint8Array(PHOTO_MAX_BYTES + 1);
 		oversized.set(PNG);
 		const binaryChunks: string[] = [];
@@ -144,7 +144,7 @@ describe("MCP photo tools", () => {
 			);
 		}
 		expect(
-			await uploadSessionPhotoHandler(env, {
+			await uploadSessionPhotoHandler(env, 1, {
 				date: "2026-09-14",
 				data_base64: btoa(binaryChunks.join("")),
 			}),
@@ -152,17 +152,17 @@ describe("MCP photo tools", () => {
 	});
 
 	it("returns limit_exceeded on the fifth upload", async () => {
-		await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });
+		await getOrCreateSession(env.DB, 1, { sessionDate: "2026-09-14" });
 		for (let index = 0; index < 4; index++) {
 			expect(
-				await uploadSessionPhotoHandler(env, {
+				await uploadSessionPhotoHandler(env, 1, {
 					date: "2026-09-14",
 					data_base64: base64(JPEG),
 				}),
 			).not.toMatchObject({ isError: true });
 		}
 		expect(
-			await uploadSessionPhotoHandler(env, {
+			await uploadSessionPhotoHandler(env, 1, {
 				date: "2026-09-14",
 				data_base64: base64(JPEG),
 			}),
@@ -171,7 +171,7 @@ describe("MCP photo tools", () => {
 
 	it("returns an MCP error when uploading without a session", async () => {
 		expect(
-			await uploadSessionPhotoHandler(env, {
+			await uploadSessionPhotoHandler(env, 1, {
 				date: "2026-09-14",
 				data_base64: base64(PNG),
 			}),

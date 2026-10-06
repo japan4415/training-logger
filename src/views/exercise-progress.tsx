@@ -3,6 +3,7 @@ import { raw } from "hono/html";
 import type { FC } from "hono/jsx";
 import { getExerciseAliases, getExerciseById } from "../db/exercises.js";
 import type { ExerciseAliasRow, ExerciseRow } from "../db/types.js";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import type { Bindings } from "../env.js";
 import {
 	ChartContainer,
@@ -116,6 +117,7 @@ function getDateFrom(period: Period): string | undefined {
 
 async function fetchStrengthChartData(
 	db: D1Database,
+	userId: number,
 	exerciseId: number,
 	dateFrom: string | undefined,
 ): Promise<ChartData> {
@@ -125,11 +127,12 @@ async function fetchStrengthChartData(
 		JOIN session_exercises se ON s.session_exercise_id = se.id
 		JOIN workout_sessions ws ON se.session_id = ws.id
 		WHERE se.exercise_id = ?
+		  AND ws.user_id = ?
 		  AND s.is_planned = 0
 		  AND s.weight_value IS NOT NULL
 		  AND s.weight_unit IS NOT NULL`;
 
-	const bindings: (number | string)[] = [exerciseId];
+	const bindings: (number | string)[] = [exerciseId, userId];
 
 	if (dateFrom) {
 		sql += " AND ws.session_date >= ?";
@@ -174,6 +177,7 @@ async function fetchStrengthChartData(
 
 async function fetchCardioChartData(
 	db: D1Database,
+	userId: number,
 	exerciseId: number,
 	dateFrom: string | undefined,
 ): Promise<ChartData> {
@@ -183,10 +187,11 @@ async function fetchCardioChartData(
 		JOIN session_exercises se ON s.session_exercise_id = se.id
 		JOIN workout_sessions ws ON se.session_id = ws.id
 		WHERE se.exercise_id = ?
+		  AND ws.user_id = ?
 		  AND s.is_planned = 0
 		  AND s.speed_max IS NOT NULL`;
 
-	const bindings: (number | string)[] = [exerciseId];
+	const bindings: (number | string)[] = [exerciseId, userId];
 
 	if (dateFrom) {
 		sql += " AND ws.session_date >= ?";
@@ -216,14 +221,15 @@ async function fetchCardioChartData(
 
 async function fetchChartData(
 	db: D1Database,
+	userId: number,
 	exercise: ExerciseRow,
 	dateFrom: string | undefined,
 ): Promise<ChartData> {
 	switch (exercise.category) {
 		case "strength":
-			return fetchStrengthChartData(db, exercise.id, dateFrom);
+			return fetchStrengthChartData(db, userId, exercise.id, dateFrom);
 		case "cardio":
-			return fetchCardioChartData(db, exercise.id, dateFrom);
+			return fetchCardioChartData(db, userId, exercise.id, dateFrom);
 		default:
 			// flexibility / other: no chart data
 			return { labels: [], datasets: [], type: "weight" };
@@ -232,6 +238,7 @@ async function fetchChartData(
 
 async function fetchHistory(
 	db: D1Database,
+	userId: number,
 	exerciseId: number,
 	dateFrom: string | undefined,
 ): Promise<HistoryEntry[]> {
@@ -243,9 +250,10 @@ async function fetchHistory(
 		FROM session_exercises se
 		JOIN workout_sessions ws ON se.session_id = ws.id
 		LEFT JOIN sets s ON se.id = s.session_exercise_id AND s.is_planned = 0
-		WHERE se.exercise_id = ?`;
+		WHERE se.exercise_id = ?
+		  AND ws.user_id = ?`;
 
-	const bindings: (number | string)[] = [exerciseId];
+	const bindings: (number | string)[] = [exerciseId, userId];
 
 	if (dateFrom) {
 		sql += " AND ws.session_date >= ?";
@@ -528,8 +536,8 @@ export function registerExerciseProgressRoutes(
 
 		const [aliases, chartData, history] = await Promise.all([
 			getExerciseAliases(c.env.DB, id),
-			fetchChartData(c.env.DB, exercise, dateFrom),
-			fetchHistory(c.env.DB, id, dateFrom),
+			fetchChartData(c.env.DB, DEFAULT_USER_ID, exercise, dateFrom),
+			fetchHistory(c.env.DB, DEFAULT_USER_ID, id, dateFrom),
 		]);
 
 		if (isHtmx) {

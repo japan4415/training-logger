@@ -19,7 +19,7 @@ const IMAGES = {
 };
 
 async function cleanPhotos() {
-	const listed = await env.PHOTOS.list({ prefix: "sessions/" });
+	const listed = await env.PHOTOS.list();
 	if (listed.objects.length) {
 		await env.PHOTOS.delete(listed.objects.map((object) => object.key));
 	}
@@ -51,10 +51,10 @@ describe("session photos DB service", () => {
 		["image/png", IMAGES.png],
 		["image/webp", IMAGES.webp],
 	] as const)("stores %s using magic bytes", async (contentType, bytes) => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const result = await storeSessionPhoto(env, session, bytes);
+		const result = await storeSessionPhoto(env, 1, session, bytes);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect(result.photo.content_type).toBe(contentType);
@@ -67,61 +67,62 @@ describe("session photos DB service", () => {
 		new TextEncoder().encode("<svg></svg>"),
 		new TextEncoder().encode("plain text"),
 	])("rejects unsupported content without writing R2", async (bytes) => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		expect(await storeSessionPhoto(env, session, bytes)).toEqual({
+		expect(await storeSessionPhoto(env, 1, session, bytes)).toEqual({
 			ok: false,
 			error: "unsupported_type",
 		});
 		expect(
-			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+			(await env.PHOTOS.list({ prefix: "users/1/sessions/" })).objects,
 		).toHaveLength(0);
 	});
 
 	it("rejects a file over 10 MiB", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const bytes = new Uint8Array(PHOTO_MAX_BYTES + 1);
 		bytes.set(IMAGES.jpeg);
-		expect(await storeSessionPhoto(env, session, bytes)).toEqual({
+		expect(await storeSessionPhoto(env, 1, session, bytes)).toEqual({
 			ok: false,
 			error: "too_large",
 		});
 	});
 
 	it("enforces four photos atomically and compensates the fifth R2 put", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		for (let index = 0; index < 4; index++) {
-			expect((await storeSessionPhoto(env, session, IMAGES.jpeg)).ok).toBe(
+			expect((await storeSessionPhoto(env, 1, session, IMAGES.jpeg)).ok).toBe(
 				true,
 			);
 		}
-		expect(await storeSessionPhoto(env, session, IMAGES.jpeg)).toEqual({
+		expect(await storeSessionPhoto(env, 1, session, IMAGES.jpeg)).toEqual({
 			ok: false,
 			error: "limit_exceeded",
 		});
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(4);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(4);
 		expect(
-			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+			(await env.PHOTOS.list({ prefix: "users/1/sessions/" })).objects,
 		).toHaveLength(4);
 	});
 
 	it("preserves the limit result when its R2 compensation fails", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		for (let index = 0; index < 4; index++) {
-			expect((await storeSessionPhoto(env, session, IMAGES.jpeg)).ok).toBe(
+			expect((await storeSessionPhoto(env, 1, session, IMAGES.jpeg)).ok).toBe(
 				true,
 			);
 		}
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});
 		const result = await storeSessionPhoto(
 			{ ...env, PHOTOS: bucketWithFailingDelete("compensation failed") },
+			1,
 			session,
 			IMAGES.jpeg,
 		);
@@ -134,7 +135,7 @@ describe("session photos DB service", () => {
 	});
 
 	it("compensates the R2 put when the D1 insert fails", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const failingDb = {
@@ -155,15 +156,15 @@ describe("session photos DB service", () => {
 		} as unknown as D1Database;
 
 		await expect(
-			storeSessionPhoto({ ...env, DB: failingDb }, session, IMAGES.jpeg),
+			storeSessionPhoto({ ...env, DB: failingDb }, 1, session, IMAGES.jpeg),
 		).rejects.toThrow("injected D1 insert failure");
 		expect(
-			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+			(await env.PHOTOS.list({ prefix: "users/1/sessions/" })).objects,
 		).toHaveLength(0);
 	});
 
 	it("preserves a D1 insert error when R2 compensation also fails", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const failingDb = {
@@ -191,6 +192,7 @@ describe("session photos DB service", () => {
 					DB: failingDb,
 					PHOTOS: bucketWithFailingDelete("compensation failed"),
 				},
+				1,
 				session,
 				IMAGES.jpeg,
 			),
@@ -200,41 +202,42 @@ describe("session photos DB service", () => {
 	});
 
 	it("deletes one photo from D1 and R2", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const stored = await storeSessionPhoto(env, session, IMAGES.png);
+		const stored = await storeSessionPhoto(env, 1, session, IMAGES.png);
 		if (!stored.ok) throw new Error(stored.error);
-		expect(await deleteSessionPhoto(env, session.id, stored.photo.id)).toBe(
+		expect(await deleteSessionPhoto(env, 1, session.id, stored.photo.id)).toBe(
 			true,
 		);
 		expect(await env.PHOTOS.get(stored.photo.r2_key)).toBeNull();
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(0);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(0);
 	});
 
 	it("keeps photo metadata when a single-photo R2 deletion fails", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const stored = await storeSessionPhoto(env, session, IMAGES.png);
+		const stored = await storeSessionPhoto(env, 1, session, IMAGES.png);
 		if (!stored.ok) throw new Error(stored.error);
 
 		await expect(
 			deleteSessionPhoto(
 				{ ...env, PHOTOS: bucketWithFailingDelete("R2 delete failed") },
+				1,
 				session.id,
 				stored.photo.id,
 			),
 		).rejects.toThrow("R2 delete failed");
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(1);
 		expect(await env.PHOTOS.get(stored.photo.r2_key)).not.toBeNull();
 	});
 
 	it("prunes metadata after R2 deletion followed by a D1 delete failure", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const stored = await storeSessionPhoto(env, session, IMAGES.png);
+		const stored = await storeSessionPhoto(env, 1, session, IMAGES.png);
 		if (!stored.ok) throw new Error(stored.error);
 		const failingDb = {
 			prepare(query: string) {
@@ -256,32 +259,33 @@ describe("session photos DB service", () => {
 		await expect(
 			deleteSessionPhoto(
 				{ ...env, DB: failingDb },
+				1,
 				session.id,
 				stored.photo.id,
 			),
 		).rejects.toThrow("injected D1 delete failure");
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(1);
 		expect(await env.PHOTOS.get(stored.photo.r2_key)).toBeNull();
-		expect(await listExistingSessionPhotos(env, session.id)).toHaveLength(0);
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(0);
+		expect(await listExistingSessionPhotos(env, 1, session.id)).toHaveLength(0);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(0);
 	});
 
 	it("deleteSession removes linked R2 objects", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const stored = await storeSessionPhoto(env, session, IMAGES.webp);
+		const stored = await storeSessionPhoto(env, 1, session, IMAGES.webp);
 		if (!stored.ok) throw new Error(stored.error);
-		expect(await deleteSession(env, session.id)).toBe(true);
+		expect(await deleteSession(env, 1, session.id)).toBe(true);
 		expect(await env.PHOTOS.get(stored.photo.r2_key)).toBeNull();
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(0);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(0);
 	});
 
 	it("post-sweeps an object created during session deletion", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const stored = await storeSessionPhoto(env, session, IMAGES.webp);
+		const stored = await storeSessionPhoto(env, 1, session, IMAGES.webp);
 		if (!stored.ok) throw new Error(stored.error);
 		let injected = false;
 		const photos = new Proxy(env.PHOTOS, {
@@ -303,7 +307,7 @@ describe("session photos DB service", () => {
 			},
 		});
 
-		expect(await deleteSession({ ...env, PHOTOS: photos }, session.id)).toBe(
+		expect(await deleteSession({ ...env, PHOTOS: photos }, 1, session.id)).toBe(
 			true,
 		);
 		expect(
@@ -316,7 +320,7 @@ describe("session photos DB service", () => {
 	});
 
 	it("does not sweep photos from a recreated session on the same date", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const staleKey = `sessions/2026-09-14/${session.id}/concurrent-upload.jpg`;
@@ -327,11 +331,16 @@ describe("session photos DB service", () => {
 				if (property === "list") {
 					return async (options: R2ListOptions) => {
 						await target.put(staleKey, IMAGES.jpeg);
-						const { session: replacement } = await getOrCreateSession(env.DB, {
-							sessionDate: "2026-09-14",
-						});
+						const { session: replacement } = await getOrCreateSession(
+							env.DB,
+							1,
+							{
+								sessionDate: "2026-09-14",
+							},
+						);
 						const stored = await storeSessionPhoto(
 							env,
+							1,
 							replacement,
 							IMAGES.jpeg,
 						);
@@ -346,7 +355,7 @@ describe("session photos DB service", () => {
 			},
 		});
 
-		expect(await deleteSession({ ...env, PHOTOS: photos }, session.id)).toBe(
+		expect(await deleteSession({ ...env, PHOTOS: photos }, 1, session.id)).toBe(
 			true,
 		);
 		expect(replacementId).not.toBe(session.id);
@@ -358,7 +367,7 @@ describe("session photos DB service", () => {
 	});
 
 	it("keeps a successful D1 deletion when the post-sweep fails", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const photos = new Proxy(env.PHOTOS, {
@@ -374,7 +383,7 @@ describe("session photos DB service", () => {
 		});
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
-		expect(await deleteSession({ ...env, PHOTOS: photos }, session.id)).toBe(
+		expect(await deleteSession({ ...env, PHOTOS: photos }, 1, session.id)).toBe(
 			true,
 		);
 		expect(error).toHaveBeenCalledWith(
@@ -392,10 +401,10 @@ describe("session photos DB service", () => {
 	});
 
 	it("keeps the session and photo row when R2 deletion fails", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const stored = await storeSessionPhoto(env, session, IMAGES.jpeg);
+		const stored = await storeSessionPhoto(env, 1, session, IMAGES.jpeg);
 		if (!stored.ok) throw new Error(stored.error);
 		const failingPhotos = {
 			delete() {
@@ -404,14 +413,14 @@ describe("session photos DB service", () => {
 		} as unknown as R2Bucket;
 
 		await expect(
-			deleteSession({ ...env, PHOTOS: failingPhotos }, session.id),
+			deleteSession({ ...env, PHOTOS: failingPhotos }, 1, session.id),
 		).rejects.toThrow("injected R2 delete failure");
 		expect(
 			await env.DB.prepare("SELECT id FROM workout_sessions WHERE id = ?")
 				.bind(session.id)
 				.first(),
 		).not.toBeNull();
-		expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(1);
 		expect(await env.PHOTOS.get(stored.photo.r2_key)).not.toBeNull();
 	});
 });

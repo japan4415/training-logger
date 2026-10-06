@@ -1,5 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Hono } from "hono";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import type { Bindings } from "../env.js";
 import { createMcpServer } from "./server.js";
 
@@ -17,7 +18,7 @@ mcpApp.post("/", async (c) => {
 		const transport = new WebStandardStreamableHTTPServerTransport({
 			enableJsonResponse: true,
 		});
-		const server = createMcpServer(c.env);
+		const server = createMcpServer(c.env, { userId: DEFAULT_USER_ID });
 		await server.connect(transport);
 		return transport.handleRequest(c.req.raw);
 	} catch {

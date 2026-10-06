@@ -26,9 +26,10 @@ const PHOTO_ERROR_MESSAGES = {
 
 export async function createPhotoUploadLinkHandler(
 	env: Bindings,
+	userId: number,
 	params: { date: string },
 ) {
-	const session = await getSessionByDate(env.DB, params.date);
+	const session = await getSessionByDate(env.DB, userId, params.date);
 	if (!session) {
 		return {
 			isError: true as const,
@@ -77,13 +78,14 @@ export function decodeBase64Strict(value: string): Uint8Array {
 
 export async function uploadSessionPhotoHandler(
 	env: Bindings,
+	userId: number,
 	params: {
 		date: string;
 		data_base64: string;
 		content_type?: (typeof PHOTO_ALLOWED_TYPES)[number];
 	},
 ) {
-	const session = await getSessionByDate(env.DB, params.date);
+	const session = await getSessionByDate(env.DB, userId, params.date);
 	if (!session) {
 		return {
 			isError: true as const,
@@ -124,7 +126,7 @@ export async function uploadSessionPhotoHandler(
 		};
 	}
 
-	const result = await storeSessionPhoto(env, session, bytes);
+	const result = await storeSessionPhoto(env, userId, session, bytes);
 	if (!result.ok) {
 		return {
 			isError: true as const,
@@ -154,7 +156,11 @@ function toolResponse(result: unknown) {
 	};
 }
 
-export function registerPhotoTools(server: McpServer, env: Bindings): void {
+export function registerPhotoTools(
+	server: McpServer,
+	env: Bindings,
+	userId: number,
+): void {
 	server.registerTool(
 		"create_photo_upload_link",
 		{
@@ -167,7 +173,8 @@ export function registerPhotoTools(server: McpServer, env: Bindings): void {
 					.describe("セッション日付 (YYYY-MM-DD)"),
 			},
 		},
-		async (args) => toolResponse(await createPhotoUploadLinkHandler(env, args)),
+		async (args) =>
+			toolResponse(await createPhotoUploadLinkHandler(env, userId, args)),
 	);
 
 	server.registerTool(
@@ -192,6 +199,7 @@ export function registerPhotoTools(server: McpServer, env: Bindings): void {
 					),
 			},
 		},
-		async (args) => toolResponse(await uploadSessionPhotoHandler(env, args)),
+		async (args) =>
+			toolResponse(await uploadSessionPhotoHandler(env, userId, args)),
 	);
 }

@@ -29,7 +29,7 @@ describe("records", () => {
 		});
 		exerciseId = exercise.id;
 
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-08-15",
 		});
 		sessionId = session.id;
@@ -37,7 +37,7 @@ describe("records", () => {
 
 	describe("createSessionExercise", () => {
 		it("should create with auto display_order starting from 1", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
@@ -48,21 +48,21 @@ describe("records", () => {
 		});
 
 		it("should auto-increment display_order within a session", async () => {
-			const se1 = await createSessionExercise(env.DB, {
+			const se1 = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
 			const { exercise: exercise2 } = await registerExercise(env.DB, {
 				name: "スクワット",
 			});
-			const se2 = await createSessionExercise(env.DB, {
+			const se2 = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId: exercise2.id,
 			});
 			const { exercise: exercise3 } = await registerExercise(env.DB, {
 				name: "デッドリフト",
 			});
-			const se3 = await createSessionExercise(env.DB, {
+			const se3 = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId: exercise3.id,
 			});
@@ -73,12 +73,12 @@ describe("records", () => {
 		});
 
 		it("should have independent display_order per session", async () => {
-			await createSessionExercise(env.DB, { sessionId, exerciseId });
+			await createSessionExercise(env.DB, 1, { sessionId, exerciseId });
 
-			const { session: session2 } = await getOrCreateSession(env.DB, {
+			const { session: session2 } = await getOrCreateSession(env.DB, 1, {
 				sessionDate: "2026-08-16",
 			});
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId: session2.id,
 				exerciseId,
 			});
@@ -87,7 +87,7 @@ describe("records", () => {
 		});
 
 		it("should save optional fields", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 				status: "planned",
@@ -104,14 +104,14 @@ describe("records", () => {
 
 	describe("updateSessionExercise", () => {
 		it("should update specified fields only", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 				notes: "元のメモ",
 				equipmentNote: "元の器具",
 			});
 
-			const updated = await updateSessionExercise(env.DB, se.id, {
+			const updated = await updateSessionExercise(env.DB, 1, se.id, {
 				status: "skipped",
 			});
 
@@ -122,20 +122,20 @@ describe("records", () => {
 		});
 
 		it("should allow setting fields to null", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 				notes: "元のメモ",
 			});
 
-			const updated = await updateSessionExercise(env.DB, se.id, {
+			const updated = await updateSessionExercise(env.DB, 1, se.id, {
 				notes: null,
 			});
 			expect(updated?.notes).toBeNull();
 		});
 
 		it("should return null for non-existent ID", async () => {
-			const result = await updateSessionExercise(env.DB, 9999, {
+			const result = await updateSessionExercise(env.DB, 1, 9999, {
 				status: "skipped",
 			});
 			expect(result).toBeNull();
@@ -144,31 +144,31 @@ describe("records", () => {
 
 	describe("deleteSessionExercise", () => {
 		it("should delete a session exercise and return true", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			const deleted = await deleteSessionExercise(env.DB, se.id);
+			const deleted = await deleteSessionExercise(env.DB, 1, se.id);
 			expect(deleted).toBe(true);
 		});
 
 		it("should return false for non-existent ID", async () => {
-			const deleted = await deleteSessionExercise(env.DB, 9999);
+			const deleted = await deleteSessionExercise(env.DB, 1, 9999);
 			expect(deleted).toBe(false);
 		});
 
 		it("should cascade delete associated sets", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				reps: 10,
 			});
 
-			await deleteSessionExercise(env.DB, se.id);
+			await deleteSessionExercise(env.DB, 1, se.id);
 
 			const { results } = await env.DB.prepare(
 				"SELECT * FROM sets WHERE session_exercise_id = ?",
@@ -181,11 +181,11 @@ describe("records", () => {
 
 	describe("createSet", () => {
 		it("should create a strength set", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			const set = await createSet(env.DB, {
+			const set = await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				reps: 10,
@@ -199,11 +199,11 @@ describe("records", () => {
 		});
 
 		it("should create a planned set", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			const set = await createSet(env.DB, {
+			const set = await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				isPlanned: true,
@@ -214,11 +214,11 @@ describe("records", () => {
 		});
 
 		it("should create a bodyweight set (null weight)", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			const set = await createSet(env.DB, {
+			const set = await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				reps: 20,
@@ -232,11 +232,11 @@ describe("records", () => {
 				name: "ウォーキング",
 				category: "cardio",
 			});
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId: cardioEx.id,
 			});
-			const set = await createSet(env.DB, {
+			const set = await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				durationMinutes: 10,
@@ -255,11 +255,11 @@ describe("records", () => {
 				name: "ストレッチボード",
 				category: "flexibility",
 			});
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId: flexEx.id,
 			});
-			const set = await createSet(env.DB, {
+			const set = await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				angleDegrees: 20,
@@ -268,11 +268,11 @@ describe("records", () => {
 		});
 
 		it("should create a machine level set", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			const set = await createSet(env.DB, {
+			const set = await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				reps: 20,
@@ -284,17 +284,17 @@ describe("records", () => {
 		});
 
 		it("should enforce UNIQUE(session_exercise_id, set_order, is_planned)", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				reps: 10,
 			});
 			await expect(
-				createSet(env.DB, {
+				createSet(env.DB, 1, {
 					sessionExerciseId: se.id,
 					setOrder: 1,
 					reps: 15,
@@ -303,17 +303,17 @@ describe("records", () => {
 		});
 
 		it("should allow same set_order for different is_planned values", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			const planned = await createSet(env.DB, {
+			const planned = await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				isPlanned: true,
 				reps: 20,
 			});
-			const actual = await createSet(env.DB, {
+			const actual = await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				isPlanned: false,
@@ -328,25 +328,25 @@ describe("records", () => {
 
 	describe("replaceSets", () => {
 		it("should replace all existing sets with new ones", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
 
 			// Create initial sets
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				reps: 10,
 			});
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 2,
 				reps: 10,
 			});
 
 			// Replace with new sets
-			const newSets = await replaceSets(env.DB, se.id, [
+			const newSets = await replaceSets(env.DB, 1, se.id, [
 				{ reps: 15, weightValue: 60, weightUnit: "kg" },
 				{ reps: 12, weightValue: 65, weightUnit: "kg" },
 				{ reps: 10, weightValue: 70, weightUnit: "kg" },
@@ -363,14 +363,14 @@ describe("records", () => {
 		});
 
 		it("should number set_order independently for planned and actual", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
 
 			// Replicate the leg raise example from database.md:
 			// planned: 20x2, actual: 20/10/10
-			const sets = await replaceSets(env.DB, se.id, [
+			const sets = await replaceSets(env.DB, 1, se.id, [
 				{ isPlanned: true, reps: 20 },
 				{ isPlanned: true, reps: 20 },
 				{ isPlanned: false, reps: 20 },
@@ -400,17 +400,17 @@ describe("records", () => {
 		});
 
 		it("should handle empty set array (delete all)", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				reps: 10,
 			});
 
-			const result = await replaceSets(env.DB, se.id, []);
+			const result = await replaceSets(env.DB, 1, se.id, []);
 			expect(result).toHaveLength(0);
 
 			// Verify no sets remain
@@ -423,11 +423,11 @@ describe("records", () => {
 		});
 
 		it("should handle replace with no prior sets", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			const sets = await replaceSets(env.DB, se.id, [
+			const sets = await replaceSets(env.DB, 1, se.id, [
 				{ reps: 10, weightValue: 60, weightUnit: "kg" },
 			]);
 			expect(sets).toHaveLength(1);
@@ -437,22 +437,22 @@ describe("records", () => {
 
 	describe("deleteSetsBySessionExercise", () => {
 		it("should delete all sets for a session exercise", async () => {
-			const se = await createSessionExercise(env.DB, {
+			const se = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 1,
 				reps: 10,
 			});
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se.id,
 				setOrder: 2,
 				reps: 10,
 			});
 
-			await deleteSetsBySessionExercise(env.DB, se.id);
+			await deleteSetsBySessionExercise(env.DB, 1, se.id);
 
 			const { results } = await env.DB.prepare(
 				"SELECT * FROM sets WHERE session_exercise_id = ?",
@@ -463,30 +463,30 @@ describe("records", () => {
 		});
 
 		it("should not affect sets of other session exercises", async () => {
-			const se1 = await createSessionExercise(env.DB, {
+			const se1 = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId,
 			});
 			const { exercise: exercise2 } = await registerExercise(env.DB, {
 				name: "スクワット",
 			});
-			const se2 = await createSessionExercise(env.DB, {
+			const se2 = await createSessionExercise(env.DB, 1, {
 				sessionId,
 				exerciseId: exercise2.id,
 			});
 
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se1.id,
 				setOrder: 1,
 				reps: 10,
 			});
-			await createSet(env.DB, {
+			await createSet(env.DB, 1, {
 				sessionExerciseId: se2.id,
 				setOrder: 1,
 				reps: 15,
 			});
 
-			await deleteSetsBySessionExercise(env.DB, se1.id);
+			await deleteSetsBySessionExercise(env.DB, 1, se1.id);
 
 			// se2's sets should remain
 			const { results } = await env.DB.prepare(

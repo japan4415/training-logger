@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import { getHistory } from "../db/queries.js";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import type { Bindings } from "../env.js";
 import { SessionCard } from "./components/session-card.js";
 import { Layout } from "./layout.js";
@@ -166,7 +167,7 @@ export function registerSessionViews(app: Hono<{ Bindings: Bindings }>): void {
 		}
 
 		const db = c.env.DB;
-		const sessions = await getHistory(db, {
+		const sessions = await getHistory(db, DEFAULT_USER_ID, {
 			dateFrom: monthStartDate(year, month),
 			dateTo: monthEndDate(year, month),
 			includeSets: false,
