@@ -34,12 +34,15 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  *
  * `c.req.path` は Hono がルーティングに使う値（percent-decode 済み）と同じものを使う。
  * 末尾スラッシュ・大文字小文字・連続スラッシュの表記差で公開判定をすり抜けられない
- * よう、判定の前にここで揃える。正規化は公開側にのみ倒す（deny-by-default は維持）が、
- * 保護対象のルートはいずれも公開プレフィックスで始まらないため、保護パスが公開扱いに
- * なることはない。
+ * よう、判定の前にここで揃える。大文字小文字は **ASCII のみ** を畳む。`toLowerCase()`
+ * は Unicode の単純ケースフォールディングを行い、`U+212A`(KELVIN SIGN) を `k` に
+ * 畳むため、将来 `/skills` と大小違いの保護ルートを足したときに公開扱いになり得る。
+ * ASCII のみの畳み込みにして、公開側への倒れ込みを ASCII の範囲に限定する。
  */
 export function normalizePath(pathname: string): string {
-	const collapsed = pathname.toLowerCase().replace(/\/{2,}/g, "/");
+	const collapsed = pathname
+		.replace(/[A-Z]/g, (character) => character.toLowerCase())
+		.replace(/\/{2,}/g, "/");
 	if (collapsed.length > 1 && collapsed.endsWith("/")) {
 		return collapsed.slice(0, -1);
 	}

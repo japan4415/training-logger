@@ -11,6 +11,8 @@ interface JwtHeader {
 interface JwtPayload {
 	aud?: string | string[];
 	exp?: number;
+	iss?: string;
+	nbf?: number;
 	sub?: string;
 	email?: string;
 }
@@ -25,8 +27,14 @@ interface CachedJwk {
 }
 
 const JWKS_CACHE_TTL_MS = 10 * 60 * 1000;
+// 未知の kid による JWKS の連続再取得（外向き fetch の増幅）を抑える最小間隔。
+// 鍵ローテーションはこの間隔が空いた後の再取得で拾う。
+const JWKS_MIN_REFETCH_INTERVAL_MS = 30 * 1000;
+// トークンの nbf 検査で許容する時計ずれ（秒）。
+const CLOCK_SKEW_SECONDS = 60;
 const jwksCaches = new WeakMap<FetchFn, Map<string, CachedJwk>>();
 const pendingJwksRequests = new WeakMap<FetchFn, Map<string, Promise<void>>>();
+const jwksLastFetchedAt = new WeakMap<FetchFn, Map<string, number>>();
 
 async function getAccessJwk(
 	teamDomain: string,
@@ -43,6 +51,20 @@ async function getAccessJwk(
 	if (cached && cached.expiresAt > Date.now()) return cached.jwk;
 	cache.delete(cacheKey);
 
+	let lastFetchedAtByDomain = jwksLastFetchedAt.get(fetchFn);
+	if (!lastFetchedAtByDomain) {
+		lastFetchedAtByDomain = new Map();
+		jwksLastFetchedAt.set(fetchFn, lastFetchedAtByDomain);
+	}
+	const lastFetchedAt = lastFetchedAtByDomain.get(teamDomain);
+	if (
+		lastFetchedAt !== undefined &&
+		Date.now() - lastFetchedAt < JWKS_MIN_REFETCH_INTERVAL_MS
+	) {
+		// 直近に取得済みなら再取得しない（未知 kid の連打で fetch を増幅させない）。
+		throw new Error("JWT signing key not found");
+	}
+
 	let pendingByDomain = pendingJwksRequests.get(fetchFn);
 	if (!pendingByDomain) {
 		pendingByDomain = new Map();
@@ -56,6 +78,7 @@ async function getAccessJwk(
 			);
 			if (!response.ok) throw new Error("Unable to fetch Access JWKS");
 			const jwks = (await response.json()) as JwksResponse;
+			lastFetchedAtByDomain.set(teamDomain, Date.now());
 			const expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
 			for (const jwk of jwks.keys ?? []) {
 				if (jwk.kid) {
@@ -122,6 +145,16 @@ export async function verifyAccessJwt(
 		payload.exp <= Date.now() / 1000
 	) {
 		throw new Error("JWT expired");
+	}
+	if (payload.iss !== `https://${teamDomain}`) {
+		throw new Error("JWT issuer mismatch");
+	}
+	if (
+		typeof payload.nbf === "number" &&
+		Number.isFinite(payload.nbf) &&
+		payload.nbf > Date.now() / 1000 + CLOCK_SKEW_SECONDS
+	) {
+		throw new Error("JWT not yet valid");
 	}
 	if (!audienceMatches(payload.aud, audience)) {
 		throw new Error("JWT audience mismatch");

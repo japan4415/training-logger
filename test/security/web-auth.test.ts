@@ -11,6 +11,7 @@ import { registerSessionViews } from "../../src/views/sessions-list.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 
 const DOMAIN = "team.cloudflareaccess.com";
+const ISSUER = `https://${DOMAIN}`;
 const AUDIENCE = "test-audience";
 let keys: CryptoKeyPair;
 let publicJwk: JsonWebKey;
@@ -41,6 +42,7 @@ async function validJwt(sub: string, email?: string): Promise<string> {
 		sub,
 		email,
 		aud: AUDIENCE,
+		iss: ISSUER,
 		exp: Math.floor(Date.now() / 1000) + 60,
 	});
 }
@@ -236,6 +238,17 @@ describe("Web / REST Access middleware", () => {
 			}
 		});
 
+		it("does not fold Unicode letters when deciding public paths", async () => {
+			// U+212A (KELVIN SIGN) は toLowerCase() で ASCII の "k" に畳まれるため、
+			// ASCII のみの正規化でないと /skills として公開扱いになり得る。
+			const response = await echoApp(jwksFetch()).request(
+				"/s\u212Aills/log-workout/SKILL.md",
+				{},
+				accessBindings(),
+			);
+			expect(response.status).toBe(401);
+		});
+
 		it("does not fetch JWKS for public paths", async () => {
 			const fetchFn = jwksFetch();
 			await echoApp(fetchFn).request("/mcp", {}, accessBindings());
@@ -329,6 +342,7 @@ describe("Web / REST Access middleware", () => {
 		it("rejects a token without a subject", async () => {
 			const token = await jwt({
 				aud: AUDIENCE,
+				iss: ISSUER,
 				exp: Math.floor(Date.now() / 1000) + 60,
 			});
 			const response = await echoApp(jwksFetch()).request(
