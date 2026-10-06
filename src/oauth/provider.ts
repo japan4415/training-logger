@@ -38,13 +38,25 @@ export type DefaultHandler = {
 export function createOAuthProvider(
 	defaultHandler: DefaultHandler,
 ): OAuthProvider<Bindings> {
+	return new OAuthProvider<Bindings>(oauthProviderOptions(defaultHandler));
+}
+
+/**
+ * `OAuthProvider` のオプションを組み立てる。
+ *
+ * 本番の `createOAuthProvider` と、テストが `getOAuthApi` で grant / token を
+ * 直接発行する経路で同じ定義を共有するために分離している。
+ */
+export function oauthProviderOptions(
+	defaultHandler: DefaultHandler,
+): OAuthProviderOptions<Bindings> {
 	// apiHandler は偽の ctx.props を渡す単体テストのために独立エクスポートしており、
 	// 型はテスト向けの狭い Props（McpAuthProps）を持つ。ライブラリのオプション型は
 	// Props を unknown として扱うため、ここで境界を明示的に合わせる。
 	const apiHandler =
 		mcpApiHandler as unknown as OAuthProviderOptions<Bindings>["apiHandler"];
 
-	return new OAuthProvider<Bindings>({
+	return {
 		apiRoute: "/mcp",
 		apiHandler,
 		defaultHandler:
@@ -68,5 +80,5 @@ export function createOAuthProvider(
 				`OAuth error: ${code} (${internal.category}/${internal.reason})`,
 			);
 		},
-	});
+	};
 }

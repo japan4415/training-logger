@@ -15,6 +15,8 @@ import {
 	updateSession,
 } from "../../db/sessions.js";
 import type { Bindings } from "../../env.js";
+import type { McpContext } from "../context.js";
+import { requireScope } from "./guard.js";
 
 // ---- Shared types ----
 
@@ -457,7 +459,7 @@ const ExerciseInputSchema = {
 export function registerWorkoutTools(
 	server: McpServer,
 	env: Bindings,
-	userId: number,
+	ctx: McpContext,
 ): void {
 	// log_workout
 	server.registerTool(
@@ -481,8 +483,10 @@ export function registerWorkoutTools(
 			},
 		},
 		async (args) => {
+			const denied = requireScope(ctx, "log_workout");
+			if (denied) return denied;
 			try {
-				const result = await logWorkoutHandler(env, userId, args);
+				const result = await logWorkoutHandler(env, ctx.userId, args);
 				return {
 					content: [
 						{
@@ -548,8 +552,10 @@ export function registerWorkoutTools(
 			},
 		},
 		async (args) => {
+			const denied = requireScope(ctx, "update_workout");
+			if (denied) return denied;
 			try {
-				const result = await updateWorkoutHandler(env, userId, args);
+				const result = await updateWorkoutHandler(env, ctx.userId, args);
 				return {
 					content: [
 						{
@@ -607,8 +613,10 @@ export function registerWorkoutTools(
 			},
 		},
 		async (args) => {
+			const denied = requireScope(ctx, "delete_workout");
+			if (denied) return denied;
 			try {
-				const result = await deleteWorkoutHandler(env, userId, args);
+				const result = await deleteWorkoutHandler(env, ctx.userId, args);
 				return {
 					content: [
 						{

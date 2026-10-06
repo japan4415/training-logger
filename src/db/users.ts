@@ -33,22 +33,33 @@ export interface UserIdentityRow {
 export const ACCESS_IDENTITY_PROVIDER = "cloudflare-access";
 
 /**
- * 内部 `users.id` の現在の状態を返す（見つからなければ null）。
+ * 認可判定に必要なユーザーの状態（`users.status` / `users.role`）。
+ */
+export interface UserAccess {
+	status: UserRow["status"];
+	role: UserRow["role"];
+}
+
+/**
+ * 内部 `users.id` の状態と role を返す（見つからなければ null）。
  *
  * OAuth の access token は許可リストを外した後も TTL まで有効なため、
  * `apiHandler` が毎リクエストこれで `users.status` を照会し、`disabled` なら
- * 401 にする。
+ * 401 にする。同じ行から `users.role` も取り、owner 限定ツールの判定に使う。
  */
-export async function getUserStatus(
+export async function getUserAccess(
 	db: D1Database,
 	userId: number,
-): Promise<UserRow["status"] | null> {
+): Promise<UserAccess | null> {
 	const row = await db
-		.prepare("SELECT status FROM users WHERE id = ?")
+		.prepare("SELECT status, role FROM users WHERE id = ?")
 		.bind(userId)
-		.first<{ status: string }>();
+		.first<{ status: string; role: string }>();
 	if (!row) return null;
-	return row.status === "active" ? "active" : "disabled";
+	return {
+		status: row.status === "active" ? "active" : "disabled",
+		role: row.role === "owner" ? "owner" : "member",
+	};
 }
 
 /** `resolveAccessIdentity` の結果。 */

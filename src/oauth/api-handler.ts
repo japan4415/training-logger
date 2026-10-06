@@ -5,17 +5,23 @@
  * ハンドラへ渡す。`ctx.props` には `/authorize` で束縛した内部 `users.id`、
  * `ctx.auth` には検証済みトークンの情報（scope など）が入る。
  *
- * ライブラリは `requiredScopes` を強制しないため、scope の不足判定と、
- * `users.status` の毎リクエスト照会（disabled なら 401）はここで行う。
- * ツール単位の細かい scope 割当は Phase 4b（p4-mcp-scope）で扱い、ここでは
- * ツール層へ `userId` を渡す口までを作る。
+ * ライブラリは `requiredScopes` を強制しないため、認可判定はここで行う。
+ *
+ *   1. baseline scope（`mcp:read` / `mcp:write` のいずれか）が無ければ 403。
+ *   2. `tools/call` はツール単位の必要 scope（`src/mcp/scopes.ts`）を検査し、
+ *      不足していれば 403 `insufficient_scope` で step-up を促す。
+ *   3. `users.status` / `users.role` を毎リクエスト D1 照会する。disabled か
+ *      不在なら 401、role は owner 限定ツールの判定に使って `createMcpServer`
+ *      へ渡す。
  */
 
 import type { OAuthResourceAuth } from "@cloudflare/workers-oauth-provider";
 import { insufficientScope } from "@cloudflare/workers-oauth-provider";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { getUserStatus } from "../db/users.js";
+import { getUserAccess } from "../db/users.js";
 import type { Bindings } from "../env.js";
+import type { McpContext } from "../mcp/context.js";
+import { requiredScopeForBody } from "../mcp/scopes.js";
 import { createMcpServer } from "../mcp/server.js";
 import { MCP_RESOURCE, RESOURCE_REQUIRED_SCOPES } from "./config.js";
 
@@ -53,11 +59,36 @@ function readUserId(props: unknown): number | null {
 	return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
+/** scope 不足の 403 応答を組み立てる。token 情報が無くても challenge を返せるようにする。 */
+function scopeChallenge(
+	auth: OAuthResourceAuth | undefined,
+	scope: readonly string[],
+	required: readonly string[],
+): Response {
+	return insufficientScope(
+		auth ?? { token: "", audience: MCP_RESOURCE, scope: [...scope] },
+		[...required],
+	);
+}
+
+/**
+ * リクエストボディの `tools/call` から必要 scope を読み取る。
+ * ボディは clone して読むため、transport には元のリクエストを渡す。
+ */
+async function readToolScope(request: Request): Promise<string | null> {
+	if (request.method !== "POST") return null;
+	try {
+		return requiredScopeForBody(await request.clone().json());
+	} catch {
+		return null;
+	}
+}
+
 /** MCP の Streamable HTTP リクエストを 1 リクエスト 1 McpServer で処理する。 */
 async function handleMcpRequest(
 	request: Request,
 	env: Bindings,
-	userId: number,
+	ctx: McpContext,
 ): Promise<Response> {
 	if (request.method !== "POST") {
 		// ステートレス構成のため SSE ストリームは提供しない（仕様上 GET は 405 でよい）。
@@ -67,7 +98,7 @@ async function handleMcpRequest(
 		const transport = new WebStandardStreamableHTTPServerTransport({
 			enableJsonResponse: true,
 		});
-		const server = createMcpServer(env, { userId });
+		const server = createMcpServer(env, ctx);
 		await server.connect(transport);
 		return transport.handleRequest(request);
 	} catch {
@@ -102,19 +133,25 @@ export const mcpApiHandler = {
 
 		const scope = ctx.auth?.scope ?? [];
 		if (!hasBaselineScope(scope)) {
-			const auth: OAuthResourceAuth = ctx.auth ?? {
-				token: "",
-				audience: MCP_RESOURCE,
-				scope: [...scope],
-			};
-			return insufficientScope(auth, [...RESOURCE_REQUIRED_SCOPES]);
+			return scopeChallenge(ctx.auth, scope, RESOURCE_REQUIRED_SCOPES);
 		}
 
-		const status = await getUserStatus(env.DB, userId);
-		if (status !== "active") {
+		// ツール単位の scope。不足時は step-up を促す 403 を返し、ツール層へ
+		// 到達させない（ツール層にも同じ表で二重のガードがある）。
+		const requiredScope = await readToolScope(request);
+		if (requiredScope && !scope.includes(requiredScope)) {
+			return scopeChallenge(ctx.auth, scope, [requiredScope]);
+		}
+
+		const access = await getUserAccess(env.DB, userId);
+		if (access?.status !== "active") {
 			return jsonError(401, "account_inactive");
 		}
 
-		return handleMcpRequest(request, env, userId);
+		return handleMcpRequest(request, env, {
+			userId,
+			role: access.role,
+			scopes: scope,
+		});
 	},
 };

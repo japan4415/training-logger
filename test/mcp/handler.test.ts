@@ -19,7 +19,7 @@ const PNG_BASE64 = "iVBORw0KGgo=";
 /** `/mcp` の apiHandler を、OAuth ライブラリを通さず偽の ctx で直接呼ぶ。 */
 function mcpContext(
 	userId: number,
-	scope: string[] = ["mcp:read", "mcp:write"],
+	scope: string[] = ["mcp:read", "mcp:write", "photos:write"],
 ): McpApiContext {
 	return {
 		props: { userId },
@@ -38,7 +38,7 @@ function mcpContext(
 function mcpFetch(
 	init: RequestInit,
 	userId = 1,
-	scope: string[] = ["mcp:read", "mcp:write"],
+	scope: string[] = ["mcp:read", "mcp:write", "photos:write"],
 ): Promise<Response> {
 	return mcpApiHandler.fetch(
 		new Request("http://localhost/mcp", init),
@@ -376,5 +376,130 @@ describe("MCP handler", () => {
 
 			expect(response.status).toBe(405);
 		});
+	});
+});
+
+/** ツール呼び出しを JSON-RPC で組み立てる（apiHandler を直接呼ぶ）。 */
+function toolFetch(
+	name: string,
+	args: unknown,
+	userId = 1,
+	scope: string[] = ["mcp:read", "mcp:write", "photos:write"],
+): Promise<Response> {
+	return mcpFetch(
+		{
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Accept: "application/json, text/event-stream",
+			},
+			body: JSON.stringify({
+				jsonrpc: "2.0",
+				id: 10,
+				method: "tools/call",
+				params: { name, arguments: args },
+			}),
+		},
+		userId,
+		scope,
+	);
+}
+
+async function toolText(response: Response): Promise<unknown> {
+	expect(response.status).toBe(200);
+	const data = (await response.json()) as {
+		result: { content: Array<{ text: string }>; isError?: boolean };
+	};
+	expect(data.result.isError).toBeUndefined();
+	return JSON.parse(data.result.content[0].text);
+}
+
+describe("MCP authorization", () => {
+	beforeAll(() => applyMigrations(env.DB));
+	beforeEach(async () => {
+		await cleanDatabase(env.DB);
+		const listed = await env.PHOTOS.list();
+		if (listed.objects.length) {
+			await env.PHOTOS.delete(listed.objects.map((object) => object.key));
+		}
+	});
+
+	it("does not leak another user's history through get_history", async () => {
+		await env.DB.prepare(
+			"INSERT INTO users (id, display_name, status, role) VALUES (2, NULL, 'active', 'member')",
+		).run();
+
+		await toolFetch("log_workout", {
+			date: "2026-09-14",
+			exercises: [{ name: "ベンチプレス", sets: [{ reps: 5 }] }],
+		});
+
+		const other = (await toolText(
+			await toolFetch("get_history", {}, 2, ["mcp:read"]),
+		)) as { sessions: unknown[] };
+		expect(other.sessions).toEqual([]);
+
+		const owner = (await toolText(
+			await toolFetch("get_history", {}, 1, ["mcp:read"]),
+		)) as { sessions: unknown[] };
+		expect(owner.sessions).toHaveLength(1);
+	});
+
+	it("rejects an owner-only tool for a member with a tool error", async () => {
+		await env.DB.prepare(
+			"INSERT INTO users (id, display_name, status, role) VALUES (2, NULL, 'active', 'member')",
+		).run();
+		const response = await toolFetch(
+			"set_exercise_muscles",
+			{ exercise_id: 1, atlas_muscles: null },
+			2,
+			["mcp:read", "mcp:write"],
+		);
+		expect(response.status).toBe(200);
+		const data = (await response.json()) as {
+			result: { content: Array<{ text: string }>; isError?: boolean };
+		};
+		expect(data.result.isError).toBe(true);
+		expect(JSON.parse(data.result.content[0].text).error).toContain(
+			"オーナーのみ",
+		);
+	});
+
+	it("returns 403 insufficient_scope when the tool needs a missing scope", async () => {
+		const response = await toolFetch(
+			"log_workout",
+			{ date: "2026-09-14", exercises: [{ name: "ベンチプレス" }] },
+			1,
+			["mcp:read"],
+		);
+		expect(response.status).toBe(403);
+		expect(response.headers.get("WWW-Authenticate") ?? "").toContain(
+			'scope="mcp:write"',
+		);
+	});
+
+	it("scopes the photo link and upload to the caller's session", async () => {
+		await env.DB.prepare(
+			"INSERT INTO users (id, display_name, status, role) VALUES (2, NULL, 'active', 'member')",
+		).run();
+		await getOrCreateSession(env.DB, 1, { sessionDate: "2026-09-14" });
+
+		const link = (await toolText(
+			await toolFetch("create_photo_upload_link", { date: "2026-09-14" }),
+		)) as { session_id: number; url: string };
+		expect(link.session_id).toBeGreaterThan(0);
+		expect(link.url).toContain(`/sessions/${link.session_id}`);
+
+		// 他ユーザーは同じ日付でも自分のセッションが無いためリンクを発行できない。
+		const denied = await toolFetch(
+			"create_photo_upload_link",
+			{ date: "2026-09-14" },
+			2,
+		);
+		expect(denied.status).toBe(200);
+		const deniedData = (await denied.json()) as {
+			result: { content: Array<{ text: string }>; isError?: boolean };
+		};
+		expect(deniedData.result.isError).toBe(true);
 	});
 });
