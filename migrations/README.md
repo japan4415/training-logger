@@ -62,13 +62,29 @@ SQLite ではテーブル定義の一部（カラム削除、`UNIQUE` 変更な�
 `0005_users_and_user_id.sql` は `workout_sessions` の `UNIQUE` を変更するため、`workout_sessions` / `session_exercises` / `sets` / `session_photos` の 4 テーブルを 1 つの migration で同時に再構築する。手順は次のとおり。
 
 1. `PRAGMA defer_foreign_keys = on`
-2. 新しい列を含む `*_new` テーブルを作成する（子の `REFERENCES` は `*_new` を指す）
-3. `id` を保持して親 → 子の順にコピーする
-4. 子から `DROP` する（`sets` → `session_photos` → `session_exercises` → `workout_sessions`）
-5. 親から `RENAME` する（`*_new` → 最終名。子の参照は SQLite が自動で追随する）
-6. インデックスを再作成する
+2. `users` / `user_identities` を作成し、既定オーナー `id = 1` を投入する
+3. 新しい列を含む `*_new` テーブルを作成する（子の `REFERENCES` は `*_new` を指す）
+4. AUTOINCREMENT の採番位置を引き継ぐ（下記「AUTOINCREMENT の採番位置」）
+5. `id` を保持して親 → 子の順にコピーする
+6. 子から `DROP` する（`sets` → `session_photos` → `session_exercises` → `workout_sessions`）
+7. 親から `RENAME` する（`*_new` → 最終名。子の参照は SQLite が自動で追随する）
+8. インデックスを再作成する
 
-`test/db/migration-0005.test.ts` が 0001〜0004 相当のデータを投入して実際の SQL を適用し、件数・ID・`PRAGMA foreign_key_check`・CASCADE・複合 `UNIQUE` を検証する。同種の再構築を追加するときは、この形でデータ入りの migration テストも併せて追加する。
+### AUTOINCREMENT の採番位置
+
+`DROP TABLE` は旧テーブルの `sqlite_sequence` 行も消すため、`*_new` 側の採番位置はコピーした `MAX(id)` まで下がる。末尾で削除した id が再利用されると、期限の無い `/sessions/:id` リンクや古い id を保持するクライアントが別セッションを指し得る。0005 は旧 `sqlite_sequence` の値と同じ id の一時行を `*_new` へ 1 行だけ `INSERT` してすぐ `DELETE` することで、通常の AUTOINCREMENT の仕組みで高水位だけを引き継ぐ（`DELETE` では採番位置は下がらない）。`sqlite_sequence` は直接書き換えないため、本番 D1 での書き込み可否に依存しない。
+
+`test/db/migration-0005.test.ts` が 0001〜0004 相当のデータを投入して実際の SQL を適用し、件数・ID・`PRAGMA foreign_key_check`・CASCADE・複合 `UNIQUE`・削除済み id が再利用されないことを検証する。同種の再構築を追加するときは、この形でデータ入りの migration テストも併せて追加する。
+
+### `0005` の本番適用手順
+
+`0005` は 4 テーブルを再構築する変更のため、本番へ適用する前に次の順で進める。`--remote` の操作は人手で実施する（自動作業環境からは実行しない）。実データや Time Travel bookmark の具体値はドキュメントへ書かない。
+
+1. **退避**: `pnpm exec wrangler d1 export training-logger-db --remote --output <退避ファイル>` で現行データを退避し、Time Travel の現在の bookmark を控える。
+2. **リハーサル**: 手順 1 の export をローカルの D1 へ投入し、`pnpm exec wrangler d1 migrations apply training-logger-db --local` で `0005` の適用を事前確認する。
+3. **本番適用**: `pnpm exec wrangler d1 migrations apply training-logger-db --remote` を実行する。
+4. **確認**: 適用後に `workout_sessions` / `session_exercises` / `sets` / `session_photos` の件数が適用前と一致すること、`PRAGMA foreign_key_check` が空であることを確認する。
+5. **失敗時**: `0005` は 1 つのバッチ（1 トランザクション）で実行され、失敗しても `d1_migrations` には記録されないため、原因を修正してそのまま再実行できる。データに異常が出た場合は手順 1 で控えた Time Travel bookmark へ restore する。
 
 ## 注意事項
 

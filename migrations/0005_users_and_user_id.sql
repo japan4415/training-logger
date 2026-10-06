@@ -1,5 +1,11 @@
 -- ユーザーと外部 IdP 識別子の対応を新設する (docs/database.md 参照)。
 -- users はアプリ内部の識別子で、外部の subject を直接 user_id には使わない。
+--
+-- D1 は外部キーを常時有効にし、PRAGMA foreign_keys = off は使えない。
+-- workout_sessions だけを DROP すると ON DELETE CASCADE により
+-- session_exercises / sets / session_photos の全行が消えるため、4 テーブルを同時に再構築する。
+PRAGMA defer_foreign_keys = on;
+
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -17,14 +23,11 @@ CREATE TABLE user_identities (
     provider TEXT NOT NULL,              -- 例: 'cloudflare-access'
     subject TEXT,                        -- IdP の subject。email のみの招待行では NULL
     email TEXT COLLATE NOCASE UNIQUE,    -- 照合用。大文字小文字を区別しない一意制約
-    UNIQUE (provider, subject)
+    UNIQUE (provider, subject),
+    -- subject も email も無い行はユーザーを解決できないため登録させない。
+    CHECK (subject IS NOT NULL OR email IS NOT NULL)
 );
 CREATE INDEX idx_user_identities_user_id ON user_identities(user_id);
-
--- D1 は外部キーを常時有効にし、PRAGMA foreign_keys = off は使えない。
--- workout_sessions だけを DROP すると ON DELETE CASCADE により
--- session_exercises / sets / session_photos の全行が消えるため、4 テーブルを同時に再構築する。
-PRAGMA defer_foreign_keys = on;
 
 -- 1 日 1 行 (session_date UNIQUE) から 1 ユーザー 1 日 1 行 (UNIQUE(user_id, session_date)) へ変更する。
 CREATE TABLE workout_sessions_new (
@@ -41,9 +44,6 @@ CREATE TABLE workout_sessions_new (
 
 -- 子の *_new は workout_sessions_new / session_exercises_new を参照する。
 -- 旧テーブルの DROP で CASCADE を起こさないよう参照先を *_new にしておく。
-INSERT INTO workout_sessions_new (id, user_id, session_date, goal, body_condition, notes, created_at, updated_at)
-SELECT id, 1, session_date, goal, body_condition, notes, created_at, updated_at FROM workout_sessions;
-
 CREATE TABLE session_exercises_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL REFERENCES workout_sessions_new(id) ON DELETE CASCADE,
@@ -57,9 +57,6 @@ CREATE TABLE session_exercises_new (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     UNIQUE (session_id, display_order)
 );
-
-INSERT INTO session_exercises_new (id, session_id, exercise_id, display_order, status, equipment_note, form_cues, notes, created_at)
-SELECT id, session_id, exercise_id, display_order, status, equipment_note, form_cues, notes, created_at FROM session_exercises;
 
 CREATE TABLE sets_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,9 +77,6 @@ CREATE TABLE sets_new (
     UNIQUE (session_exercise_id, set_order, is_planned)
 );
 
-INSERT INTO sets_new (id, session_exercise_id, set_order, is_planned, reps, weight_value, weight_unit, duration_minutes, distance_km, speed_min, speed_max, incline_percent, angle_degrees, notes, created_at)
-SELECT id, session_exercise_id, set_order, is_planned, reps, weight_value, weight_unit, duration_minutes, distance_km, speed_min, speed_max, incline_percent, angle_degrees, notes, created_at FROM sets;
-
 CREATE TABLE session_photos_new (
     id TEXT PRIMARY KEY,
     session_id INTEGER NOT NULL REFERENCES workout_sessions_new(id) ON DELETE CASCADE,
@@ -91,6 +85,39 @@ CREATE TABLE session_photos_new (
     size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+
+-- AUTOINCREMENT の採番位置を引き継ぐ。DROP は旧テーブルの sqlite_sequence 行も消し、
+-- *_new 側はコピーした MAX(id) までしか進まないため、末尾で削除した id が再利用されてしまう
+-- (例: 最後の 1 件を削除してから再構築すると、次の INSERT がその削除済み id を取得する)。
+-- 旧 seq (旧 sqlite_sequence の値) と同じ id の一時行を 1 行だけ INSERT してすぐ DELETE する。
+-- AUTOINCREMENT は「これまでに挿入した最大 rowid」を記録し DELETE では下がらないため、
+-- 通常の INSERT/DELETE だけで高水位を引き継げる。sqlite_sequence は直接書き換えない
+-- (本番 D1 での書き込み可否に依存しない)。一時行は NOT NULL を満たす番兵値で作り、
+-- 外部キーは defer_foreign_keys で commit まで遅延させ、commit 前に必ず削除する。
+INSERT INTO workout_sessions_new (id, user_id, session_date)
+    SELECT seq, 1, '0000-00-00' FROM sqlite_sequence WHERE name = 'workout_sessions';
+DELETE FROM workout_sessions_new
+    WHERE id = (SELECT seq FROM sqlite_sequence WHERE name = 'workout_sessions');
+
+INSERT INTO session_exercises_new (id, session_id, exercise_id, display_order)
+    SELECT seq, -1, -1, -1 FROM sqlite_sequence WHERE name = 'session_exercises';
+DELETE FROM session_exercises_new
+    WHERE id = (SELECT seq FROM sqlite_sequence WHERE name = 'session_exercises');
+
+INSERT INTO sets_new (id, session_exercise_id, set_order)
+    SELECT seq, -1, -1 FROM sqlite_sequence WHERE name = 'sets';
+DELETE FROM sets_new
+    WHERE id = (SELECT seq FROM sqlite_sequence WHERE name = 'sets');
+
+-- id を保持して親 -> 子の順にコピーする。
+INSERT INTO workout_sessions_new (id, user_id, session_date, goal, body_condition, notes, created_at, updated_at)
+SELECT id, 1, session_date, goal, body_condition, notes, created_at, updated_at FROM workout_sessions;
+
+INSERT INTO session_exercises_new (id, session_id, exercise_id, display_order, status, equipment_note, form_cues, notes, created_at)
+SELECT id, session_id, exercise_id, display_order, status, equipment_note, form_cues, notes, created_at FROM session_exercises;
+
+INSERT INTO sets_new (id, session_exercise_id, set_order, is_planned, reps, weight_value, weight_unit, duration_minutes, distance_km, speed_min, speed_max, incline_percent, angle_degrees, notes, created_at)
+SELECT id, session_exercise_id, set_order, is_planned, reps, weight_value, weight_unit, duration_minutes, distance_km, speed_min, speed_max, incline_percent, angle_degrees, notes, created_at FROM sets;
 
 INSERT INTO session_photos_new (id, session_id, r2_key, content_type, size_bytes, created_at)
 SELECT id, session_id, r2_key, content_type, size_bytes, created_at FROM session_photos;

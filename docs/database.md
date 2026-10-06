@@ -169,6 +169,7 @@ erDiagram
 制約:
 
 - `UNIQUE(provider, subject)` -- 同一 IdP 内で `subject` は一意。`subject` が NULL の招待行は複数登録できる
+- `CHECK(subject IS NOT NULL OR email IS NOT NULL)` -- `subject` と `email` の両方が NULL の行はユーザーを解決できないため登録できない
 
 インデックス:
 
@@ -319,9 +320,9 @@ R2 キーは `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` 形式で、`YYYY-
 | flexibility | `angle_degrees`, `reps` | ストレッチボード 20度 |
 | マシンレベル | `reps`, `weight_value` (レベル値), `weight_unit='level'` | カイザーチェストプレス 20回 レベル15 |
 
-## DDL (マイグレーションファイル)
+## DDL (初期スキーマの抜粋)
 
-初期 5 テーブル（`exercises` / `exercise_aliases` / `workout_sessions` / `session_exercises` / `sets`）の SQL は `migrations/0001_initial_schema.sql` に配置する。`session_photos` は `0004`、`users` / `user_identities` と `workout_sessions.user_id` は `0005` で追加する。
+以下は `migrations/0001_initial_schema.sql` の初期 5 テーブル（`exercises` / `exercise_aliases` / `workout_sessions` / `session_exercises` / `sets`）の抜粋である。`session_photos` は `0004` で追加し、「セッション写真マイグレーション」節に DDL を載せる。`users` / `user_identities` の追加と `workout_sessions` の再構築（`user_id` と `UNIQUE(user_id, session_date)`）は `0005` で行い、「ユーザー分離マイグレーション」節に適用後の DDL を載せる。**したがって、この抜粋の `workout_sessions` は現在の定義ではなく 0001 時点のものである**（最終形は後述の節を参照）。
 
 ```sql
 -- 種目マスタ
@@ -347,6 +348,8 @@ CREATE INDEX idx_exercise_aliases_exercise_id ON exercise_aliases(exercise_id);
 CREATE INDEX idx_exercise_aliases_alias ON exercise_aliases(alias COLLATE NOCASE);
 
 -- ワークアウトセッション（1日1行）
+-- 0005 適用後は user_id を持ち、UNIQUE は UNIQUE(user_id, session_date) になる
+-- （適用後の定義は「ユーザー分離マイグレーション」節を参照）。
 CREATE TABLE workout_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_date TEXT NOT NULL UNIQUE,   -- 'YYYY-MM-DD' (Asia/Tokyo)
@@ -431,12 +434,55 @@ D1 は外部キーを常時有効にし、migration 中も `PRAGMA foreign_keys 
 1. `PRAGMA defer_foreign_keys = on`
 2. `users` / `user_identities` を作成し、既定オーナー `id = 1` を投入
 3. `*_new` を作成（子の `REFERENCES` は `*_new` を指す）
-4. `id` を保持して親 → 子の順にコピー
-5. 子から `DROP`（`sets` → `session_photos` → `session_exercises` → `workout_sessions`）
-6. 親から `RENAME`（`workout_sessions_new` → `workout_sessions`。子の参照は SQLite が自動で追随する）
-7. インデックスを再作成
+4. AUTOINCREMENT の採番位置を引き継ぐ（後述）
+5. `id` を保持して親 → 子の順にコピー
+6. 子から `DROP`（`sets` → `session_photos` → `session_exercises` → `workout_sessions`）
+7. 親から `RENAME`（`workout_sessions_new` → `workout_sessions`。子の参照は SQLite が自動で追随する）
+8. インデックスを再作成
 
-再構築後も件数・ID・`CHECK`・`UNIQUE`・`ON DELETE CASCADE` は 0001〜0004 と同等に保たれる。`exercises` / `exercise_aliases` は変更しない（共有マスタ維持）。適用前検証は `test/db/migration-0005.test.ts` が 0001〜0004 相当のデータを投入し、実際の 0005 の SQL を適用して件数・ID・`PRAGMA foreign_key_check`・CASCADE・複合 `UNIQUE` を確認する。
+再構築後も件数・ID・`CHECK`・`UNIQUE`・`ON DELETE CASCADE` は 0001〜0004 と同等に保たれる。`exercises` / `exercise_aliases` は変更しない（共有マスタ維持）。適用前検証は `test/db/migration-0005.test.ts` が 0001〜0004 相当のデータを投入し、実際の 0005 の SQL を適用して件数・ID・全列の値・`PRAGMA foreign_key_check`・CASCADE・複合 `UNIQUE`・削除済み id が再利用されないことを確認する。
+
+#### AUTOINCREMENT の採番位置
+
+`DROP TABLE` は旧テーブルの `sqlite_sequence` 行も消すため、`*_new` 側の採番位置はコピーした `MAX(id)` まで下がる。末尾で削除した id が再利用されると、期限の無い `/sessions/:id` リンクが別セッションを指し得る。0005 は旧 `sqlite_sequence` の値と同じ id の一時行を `*_new` へ 1 行だけ `INSERT` してすぐ `DELETE` し、通常の AUTOINCREMENT の仕組みで高水位だけを引き継ぐ（`DELETE` では採番位置は下がらない）。`sqlite_sequence` は直接書き換えない。
+
+#### 0005 適用後のスキーマ
+
+```sql
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    display_name TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member'))
+);
+
+CREATE TABLE user_identities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,              -- 例: 'cloudflare-access'
+    subject TEXT,                        -- email のみの招待行では NULL
+    email TEXT COLLATE NOCASE UNIQUE,
+    UNIQUE (provider, subject),
+    CHECK (subject IS NOT NULL OR email IS NOT NULL)
+);
+CREATE INDEX idx_user_identities_user_id ON user_identities(user_id);
+
+CREATE TABLE workout_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+    session_date TEXT NOT NULL,          -- 'YYYY-MM-DD' (Asia/Tokyo)
+    goal TEXT,
+    body_condition TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE (user_id, session_date)
+);
+CREATE INDEX idx_workout_sessions_date ON workout_sessions(session_date);
+```
+
+`session_exercises` / `sets` / `session_photos` は 0001・0004 と同じ定義で再作成し、それぞれのインデックスも再作成する（子テーブルの定義は変更しない）。再構築の手順と本番適用手順は [migrations/README.md](../migrations/README.md) を参照。
 
 ## 計画 vs 実績
 

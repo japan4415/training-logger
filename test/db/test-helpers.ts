@@ -20,7 +20,8 @@ export async function applyMigrations(db: D1Database): Promise<void> {
 			provider TEXT NOT NULL,
 			subject TEXT,
 			email TEXT COLLATE NOCASE UNIQUE,
-			UNIQUE (provider, subject)
+			UNIQUE (provider, subject),
+			CHECK (subject IS NOT NULL OR email IS NOT NULL)
 		)`),
 		db.prepare(
 			"CREATE INDEX IF NOT EXISTS idx_user_identities_user_id ON user_identities(user_id)",

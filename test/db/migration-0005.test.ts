@@ -5,6 +5,7 @@ import migration0002 from "../../migrations/0002_atlas_muscles.sql?raw";
 import migration0003 from "../../migrations/0003_atlas_trunk_muscles.sql?raw";
 import migration0004 from "../../migrations/0004_session_photos.sql?raw";
 import migration0005 from "../../migrations/0005_users_and_user_id.sql?raw";
+import { applyMigrations } from "./test-helpers.js";
 
 /** Tables rebuilt by 0005. */
 const REBUILT_TABLES = [
@@ -207,6 +208,61 @@ function normalizeForeignKeys(keys: ForeignKey[]) {
 	return [...keys]
 		.map((key) => `${key.from}->${key.table}.${key.to}:${key.on_delete}`)
 		.sort();
+}
+
+interface IndexRow {
+	name: string;
+	unique: number;
+	origin: string;
+	partial: number;
+}
+
+/** Explicit (CREATE INDEX) index names; autoindexes differ by creation path. */
+async function explicitIndexes(table: string): Promise<string[]> {
+	const { results } = await env.DB.prepare(
+		`PRAGMA index_list(${table})`,
+	).all<IndexRow>();
+	return results
+		.filter((index) => index.origin === "c")
+		.map((index) => index.name)
+		.sort();
+}
+
+const SYNC_TABLES = [
+	"users",
+	"user_identities",
+	"exercises",
+	"exercise_aliases",
+	"workout_sessions",
+	"session_exercises",
+	"sets",
+	"session_photos",
+] as const;
+
+/**
+ * Structural snapshot used to prove test/db/test-helpers.ts mirrors the real
+ * migrations. Columns are sorted by name so ALTER TABLE-added columns (for
+ * example exercises.atlas_muscles) do not cause false differences.
+ */
+async function schemaSnapshot(): Promise<Record<string, unknown>> {
+	const snapshot: Record<string, unknown> = {};
+	for (const table of SYNC_TABLES) {
+		const columns = (await tableInfo(table))
+			.map(({ name, type, notnull, dflt_value, pk }) => ({
+				name,
+				type,
+				notnull,
+				dflt_value,
+				pk,
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
+		snapshot[table] = {
+			columns,
+			foreignKeys: normalizeForeignKeys(await foreignKeys(table)),
+			indexes: await explicitIndexes(table),
+		};
+	}
+	return snapshot;
 }
 
 describe("migration 0005 (users and user data isolation)", () => {
@@ -533,5 +589,214 @@ describe("migration 0005 (users and user data isolation)", () => {
 			.bind(1, "cloudflare-access", "invite2@example.com")
 			.run();
 		expect(await countRows("user_identities")).toBe(3);
+	});
+
+	it("preserves every column value for a fully populated row", async () => {
+		// Every nullable column carries a distinct non-NULL value so an
+		// INSERT ... SELECT column mismatch cannot hide behind NULLs.
+		await env.DB.batch([
+			env.DB.prepare(
+				"INSERT INTO workout_sessions (id, session_date, goal, body_condition, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			).bind(
+				50,
+				"2099-03-01",
+				"増量",
+				"好調",
+				"all columns",
+				"2099-03-01T01:02:03Z",
+				"2099-03-01T04:05:06Z",
+			),
+			env.DB.prepare(
+				"INSERT INTO session_exercises (id, session_id, exercise_id, display_order, status, equipment_note, form_cues, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			).bind(
+				60,
+				50,
+				1,
+				1,
+				"planned",
+				"フリーウェイト",
+				"肘を締める\n肩を下げる",
+				"実施メモ",
+				"2099-03-01T01:02:03Z",
+			),
+			env.DB.prepare(
+				"INSERT INTO sets (id, session_exercise_id, set_order, is_planned, reps, weight_value, weight_unit, duration_minutes, distance_km, speed_min, speed_max, incline_percent, angle_degrees, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			).bind(
+				70,
+				60,
+				2,
+				1,
+				12,
+				22.5,
+				"lbs",
+				3.5,
+				1.25,
+				2,
+				3,
+				4.5,
+				5.5,
+				"セットメモ",
+				"2099-03-01T01:02:03Z",
+			),
+			env.DB.prepare(
+				"INSERT INTO session_photos (id, session_id, r2_key, content_type, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+			).bind(
+				"p-full",
+				50,
+				"sessions/2099-03-01/50/full.webp",
+				"image/webp",
+				1234,
+				"2099-03-01T01:02:03Z",
+			),
+		]);
+
+		const before = {
+			sessions: (
+				await env.DB.prepare(
+					"SELECT id, session_date, goal, body_condition, notes, created_at, updated_at FROM workout_sessions ORDER BY id",
+				).all()
+			).results,
+			sessionExercises: (
+				await env.DB.prepare(
+					"SELECT id, session_id, exercise_id, display_order, status, equipment_note, form_cues, notes, created_at FROM session_exercises ORDER BY id",
+				).all()
+			).results,
+			sets: (
+				await env.DB.prepare(
+					"SELECT id, session_exercise_id, set_order, is_planned, reps, weight_value, weight_unit, duration_minutes, distance_km, speed_min, speed_max, incline_percent, angle_degrees, notes, created_at FROM sets ORDER BY id",
+				).all()
+			).results,
+			photos: (
+				await env.DB.prepare(
+					"SELECT id, session_id, r2_key, content_type, size_bytes, created_at FROM session_photos ORDER BY id",
+				).all()
+			).results,
+		};
+
+		await execMigration(migration0005);
+
+		expect({
+			sessions: (
+				await env.DB.prepare(
+					"SELECT id, session_date, goal, body_condition, notes, created_at, updated_at FROM workout_sessions ORDER BY id",
+				).all()
+			).results,
+			sessionExercises: (
+				await env.DB.prepare(
+					"SELECT id, session_id, exercise_id, display_order, status, equipment_note, form_cues, notes, created_at FROM session_exercises ORDER BY id",
+				).all()
+			).results,
+			sets: (
+				await env.DB.prepare(
+					"SELECT id, session_exercise_id, set_order, is_planned, reps, weight_value, weight_unit, duration_minutes, distance_km, speed_min, speed_max, incline_percent, angle_degrees, notes, created_at FROM sets ORDER BY id",
+				).all()
+			).results,
+			photos: (
+				await env.DB.prepare(
+					"SELECT id, session_id, r2_key, content_type, size_bytes, created_at FROM session_photos ORDER BY id",
+				).all()
+			).results,
+		}).toEqual(before);
+	});
+
+	it("rejects values that violate the rebuilt CHECK constraints", async () => {
+		await execMigration(migration0005);
+
+		await expect(
+			env.DB.prepare("INSERT INTO users (id, status) VALUES (?, ?)")
+				.bind(9, "bogus")
+				.run(),
+		).rejects.toThrow(/CHECK/i);
+		await expect(
+			env.DB.prepare(
+				"INSERT INTO user_identities (user_id, provider) VALUES (?, ?)",
+			)
+				.bind(1, "cloudflare-access")
+				.run(),
+		).rejects.toThrow(/CHECK/i);
+		await expect(
+			env.DB.prepare(
+				"INSERT INTO session_exercises (session_id, exercise_id, display_order, status) VALUES (?, ?, ?, ?)",
+			)
+				.bind(1, 1, 10, "bogus")
+				.run(),
+		).rejects.toThrow(/CHECK/i);
+		await expect(
+			env.DB.prepare(
+				"INSERT INTO sets (session_exercise_id, set_order, is_planned) VALUES (?, ?, ?)",
+			)
+				.bind(1, 10, 2)
+				.run(),
+		).rejects.toThrow(/CHECK/i);
+		await expect(
+			env.DB.prepare(
+				"INSERT INTO sets (session_exercise_id, set_order, weight_unit) VALUES (?, ?, ?)",
+			)
+				.bind(1, 11, "stone")
+				.run(),
+		).rejects.toThrow(/CHECK/i);
+		await expect(
+			env.DB.prepare(
+				"INSERT INTO session_photos (id, session_id, r2_key, content_type, size_bytes) VALUES (?, ?, ?, ?, ?)",
+			)
+				.bind("neg", 1, "sessions/2099-03-02/1/neg.png", "image/png", -1)
+				.run(),
+		).rejects.toThrow(/CHECK/i);
+	});
+
+	it("carries the AUTOINCREMENT high-water mark so deleted tail ids are not reused", async () => {
+		// Remove a tail row from each AUTOINCREMENT table so sqlite_sequence
+		// sits above MAX(id) (the seed stops at ids 5 / 16 / 3).
+		await env.DB.batch([
+			env.DB.prepare(
+				"INSERT INTO workout_sessions (id, session_date) VALUES (?, ?)",
+			).bind(30, "2099-12-31"),
+			env.DB.prepare(
+				"INSERT INTO session_exercises (id, session_id, exercise_id, display_order) VALUES (?, ?, ?, ?)",
+			).bind(200, 1, 1, 99),
+			env.DB.prepare(
+				"INSERT INTO sets (id, session_exercise_id, set_order) VALUES (?, ?, ?)",
+			).bind(400, 1, 9),
+		]);
+		await env.DB.batch([
+			env.DB.prepare("DELETE FROM workout_sessions WHERE id = ?").bind(30),
+			env.DB.prepare("DELETE FROM session_exercises WHERE id = ?").bind(200),
+			env.DB.prepare("DELETE FROM sets WHERE id = ?").bind(400),
+		]);
+
+		await execMigration(migration0005);
+
+		const sequences = await env.DB.prepare(
+			"SELECT name, seq FROM sqlite_sequence WHERE name IN ('workout_sessions', 'session_exercises', 'sets') ORDER BY name",
+		).all<{ name: string; seq: number }>();
+		expect(sequences.results).toEqual([
+			{ name: "session_exercises", seq: 200 },
+			{ name: "sets", seq: 400 },
+			{ name: "workout_sessions", seq: 30 },
+		]);
+
+		// The next id continues above the deleted high-water mark, not at MAX(id)+1.
+		const inserted = await env.DB.prepare(
+			"INSERT INTO workout_sessions (session_date) VALUES (?)",
+		)
+			.bind("2099-01-01")
+			.run();
+		expect(Number(inserted.meta.last_row_id)).toBeGreaterThan(30);
+	});
+
+	it("keeps the test-helpers DDL in sync with the real migrations", async () => {
+		await dropAllTables();
+		await applyMigrations(env.DB);
+		const fromHelpers = await schemaSnapshot();
+
+		await dropAllTables();
+		await execMigration(migration0001);
+		await execMigration(migration0002);
+		await execMigration(migration0003);
+		await execMigration(migration0004);
+		await execMigration(migration0005);
+		const fromMigrations = await schemaSnapshot();
+
+		expect(fromHelpers).toEqual(fromMigrations);
 	});
 });
