@@ -41,7 +41,7 @@ pnpm exec wrangler d1 migrations apply training-logger-db --local  # ローカ�
 
 - `src/db/` - データアクセス層（ビジネスロジックの本体）。`users.ts` が `sub` → `users.id` を解決する
 - `src/mcp/` - MCP サーバ（薄く保ち、ロジックは `db/` に委譲。ツールの scope / role ガードを持つ）
-- `src/oauth/` - OAuth 2.1 認可サーバー（`OAuthProvider`・`/authorize` 同意画面・`/mcp` ハンドラ・grant 失効）
+- `src/oauth/` - OAuth 2.1 認可サーバー（`OAuthProvider`・`/authorize` 同意画面・`/mcp` ハンドラ・grant 失効ヘルパー）
 - `src/security/` - Cloudflare Access JWT 検証と deny-by-default 認証ミドルウェア
 - `src/api/` - REST API（Web UI 向け、読み取り専用）
 - `src/views/` - SSR テンプレート（Hono JSX。OAuth 同意画面を含む）

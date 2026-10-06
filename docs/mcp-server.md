@@ -45,7 +45,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。た�
 
 ### スコープ
 
-`mcp:read` / `mcp:write` / `photos:write` を基本とする。`mcp:write` は `mcp:read` を含意しない。`apiHandler` が `tools/call` のツール名から必要 scope を検査し、不足時は 403 `insufficient_scope` で step-up を促す。challenge の `scope` は「現在の scope（`offline_access` を除く）∪ 不足分」の和集合で、クライアントはこれを正として再認可する。ツール層（`src/mcp/tools/guard.ts`）にも同じ表で二重のガードがある。
+`mcp:read` / `mcp:write` / `photos:write` を基本とする。`mcp:write` は `mcp:read` を含意しない。`/mcp` の全リクエスト（`initialize` / `tools/list` を含む）はまず baseline として `mcp:read` または `mcp:write` のいずれかを要求し、どちらも無ければ 403 `insufficient_scope` になる。そのうえで `apiHandler` が `tools/call` のツール名から必要 scope を検査し、不足時は 403 `insufficient_scope` で step-up を促す。challenge の `scope` は「現在の scope（`offline_access` を除く）∪ 不足分」の和集合で、クライアントはこれを正として再認可する。ツール層（`src/mcp/tools/guard.ts`）にも同じ表で二重のガードがある。
 
 | ツール | 必要 scope |
 |---|---|
@@ -65,7 +65,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。た�
 ### トークンとユーザー状態
 
 - access token TTL は 1 時間、refresh token（grant）は 30 日で使用時に回転する。
-- `apiHandler` は毎リクエスト `users.status` / `users.role` を D1 で照会し、`status != 'active'` または不在なら 401 `account_inactive` を返す。許可リストから外した後も発行済み token が TTL まで有効なため、`users.status = 'disabled'` で即時拒否できる。grant の失効は `src/oauth/revocation.ts` のヘルパーでユーザー単位に行う。
+- `apiHandler` は毎リクエスト `users.status` / `users.role` を D1 で照会し、`status != 'active'` または不在なら 401 `account_inactive` を返す。許可リストから外した後も発行済み token が TTL まで有効なため、`users.status = 'disabled'` で即時拒否できる。grant の失効は `src/oauth/revocation.ts` の `revokeAllGrantsForUser` ヘルパーとして用意しているが、運用向けの管理エントリポイントには未接続（現状はテストのみ）。即時拒否は `users.status = 'disabled'` で行い、grant / token の一括削除が必要な場合は `OAUTH_KV` から手動で行う（[deployment.md](./deployment.md) 参照）。
 - `props.userId` は `/authorize` で束縛した内部 `users.id`（INTEGER）。`createMcpServer` へはこの値だけを渡し、外部 Access `sub` は DB 層へ渡さない。
 
 ### クライアント登録と redirect 許可リスト

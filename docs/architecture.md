@@ -129,8 +129,6 @@ custom domain 全体を Access の Allow ポリシー（deny-by-default）で保
 - access token は 1 時間、refresh token（grant）は 30 日で使用時に回転する。`apiHandler` は毎リクエスト `users.status` / `users.role` を D1 で照会し、`disabled`・不在なら 401 にする。
 - DCR は既定で無効。redirect_uri / CIMD `client_id` のホストは許可リスト（既定 `chatgpt.com` / `claude.ai` / `claude.com`。`OAUTH_ALLOWED_REDIRECT_HOSTS` で上書き）で判定する。
 
-`wrangler.jsonc` は `workers_dev: false` に設定済みで、`*.workers.dev` URL を無効化している。配信経路は custom domain だけに限定する。
-
 Access ポリシーは custom domain に対して設定される。`wrangler.jsonc` は `workers_dev: false` に設定済みで、`*.workers.dev` URL を無効化している。画像取得 URL を含め、配信経路は custom domain だけに限定する。
 
 ## リクエストフロー

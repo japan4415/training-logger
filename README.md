@@ -75,6 +75,7 @@ cp .dev.vars.example .dev.vars
 
 - `create_feedback` を試す場合、`GITHUB_TOKEN=github_pat_xxx` のプレースホルダ行は truthy のためそのままでは GitHub API が 401 になる。実際の fine-grained PAT（`Issues: Read and write`）に置き換えると `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` の先へ実際に起票される（既定は本番リポジトリ。試さない場合は行を削除すると手動起票 URL の案内にフォールバックする）
 - `OAUTH_CONSENT_SECRET` は同意画面の CSRF トークンに使う HMAC 鍵。本番では必須（未設定だと同意フローが 503 で fail-closed）。ローカル開発フォールバック（`PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` + `ACCESS_*` 未設定）では固定のダミー鍵が使われるため設定は不要
+- `.dev.vars.example` には OAuth の任意項目（`OAUTH_DCR_ENABLED` / `OAUTH_ALLOWED_REDIRECT_HOSTS`）もコメント付きで置いてある。既定のまま（DCR 無効・許可リストは `chatgpt.com,claude.ai,claude.com`）で通常は変更不要
 
 ### 動作確認
 

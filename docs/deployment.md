@@ -66,6 +66,8 @@
 
 ## 初期構築手順
 
+> **`main` へのマージで自動デプロイされる点に注意**: CD は `main` への push を検知して自動デプロイする（末尾の「CI/CD」節を参照）。手順 3〜7（KV の id 反映・`0005` の本番適用・シークレット・Access ポリシー・オーナーの紐付け）は**すべて PR のマージ前に**終えておく。KV の id が未置換のまま、または `0005` 未適用・オーナー未紐付けでマージすると、デプロイが失敗するかオーナーが `403 user_not_registered` でロックアウトする。
+
 ### 1. D1 データベースの作成
 
 ```bash
@@ -158,15 +160,7 @@ Zero Trust で custom domain を対象とした Self-hosted application を作�
 
 `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` のどちらかでも未設定なら、公開パス以外は（開発フォールバックを除き）401 `access_not_configured` で fail-closed になる。書き込み系（GET / HEAD / OPTIONS 以外）は認証前に `Sec-Fetch-Site` を検査するため、ヘッダーが無い、または `same-origin` / `none` 以外の場合は設定の有無にかかわらず 403 `csrf_forbidden` を返す。
 
-### 7. デプロイ
-
-```bash
-pnpm exec wrangler deploy
-```
-
-`pnpm exec wrangler versions deploy` を使用する場合、secret や KV binding を追加した後は、対象バージョンの binding に新しい値が含まれることを確認してからデプロイする。古いバージョンをそのまま指定すると、追加した Access 設定や `OAUTH_KV` が反映されず 401 や OAuth エラーになる。
-
-### 8. ユーザーの投入
+### 7. ユーザーの投入
 
 利用は招待制で、自由登録は提供しない。アクセス制御は 2 つを揃える: (a) Cloudflare Access の Allow ポリシーに載せる、(b) `user_identities` に対応行を入れる。実 `sub` / email の値は docs・コード・PR に書かない（投入は運用で行う）。
 
@@ -175,6 +169,16 @@ pnpm exec wrangler deploy
 3. **`sub` が変わったときの付け替え**: Cloudflare 公式定義では `sub` は組織から削除→再追加で別の値になる。該当行の `subject` を新しい値へ更新する（`(provider, subject)` は一意）。email 招待行が残っていれば初回と同じ経路でも再紐付けできる。
 
 > 当面の利用者はオーナー 1 人を既定とする（`users.id = 1` がオーナー）。複数人にする場合も手順 2 でメンバーを足すだけで、コード変更は不要。
+
+### 8. デプロイ
+
+```bash
+pnpm exec wrangler deploy
+```
+
+`pnpm exec wrangler versions deploy` を使用する場合、secret や KV binding を追加した後は、対象バージョンの binding に新しい値が含まれることを確認してからデプロイする。古いバージョンをそのまま指定すると、追加した Access 設定や `OAUTH_KV` が反映されず 401 や OAuth エラーになる。
+
+PR を `main` にマージすると Workers Builds が自動でビルド・デプロイするため、この手順は「手動で先に反映して確認する」ためのものである。マージで反映する場合も、手順 3〜7（KV の id 反映・`0005` の本番適用・シークレット・Access ポリシー・オーナーの紐付け）をマージ前に終えておく。
 
 ### 9. 疎通確認
 
@@ -200,7 +204,16 @@ pnpm exec wrangler deploy
 Access の Allow ポリシーが効くのは `/authorize` の時点だけで、発行済みの MCP access token は TTL（1 時間）まで有効、refresh token（grant）は 30 日有効である。そのためユーザーを外すときは次を順に行う。
 
 1. **即時拒否**: `users.status` を `'disabled'` に更新する。`apiHandler` が毎リクエスト `users.status` を D1 で照会し、`active` 以外なら 401 `account_inactive` を返す。Web 側も `resolveAccessIdentity` が `disabled` を 403 で拒否する。
-2. **grant の失効**: `src/oauth/revocation.ts` のヘルパーでそのユーザーの全 grant を失効させる（access / refresh token を無効化する）。失効しない場合は refresh token が 30 日残る。
+2. **grant の手動失効（任意）**: `src/oauth/revocation.ts` の `revokeAllGrantsForUser` は意図した実装だが、**運用向けの管理エントリポイント（route / script / CLI）には未接続**で、現状はテストからしか呼ばれていない。grant を消したい場合は `OAUTH_KV` から該当ユーザーのキーを手動で削除する（ライブラリのキー形式は `grant:<userId>:<grantId>` と `token:<userId>:<grantId>:<tokenId>`）。
+
+   ```bash
+   pnpm exec wrangler kv key list --binding OAUTH_KV --remote --prefix "grant:<userId>:"
+   pnpm exec wrangler kv key list --binding OAUTH_KV --remote --prefix "token:<userId>:"
+   # 出力されたキーを 1 件ずつ削除する
+   pnpm exec wrangler kv key delete --binding OAUTH_KV --remote "grant:<userId>:<grantId>"
+   ```
+
+   1 の `users.status = 'disabled'` だけで `/mcp` は毎リクエスト直ちに 401 になるため、この操作の目的は 30 日残る refresh token を確実に無効化することにある（失効漏れがあっても `apiHandler` の status 検査で 401 のままである）。管理者向けの一括失効エントリポイントは別途実装する。
 3. **Access から外す**: Zero Trust の Allow ポリシーから対象を削除し、以後のログイン・同意を止める。
 
 > Authorization ヘッダーや access token はログに出さない（`observability` の `head_sampling_rate: 1` で収集されるため特に注意する）。
