@@ -29,7 +29,7 @@ training-logger MCP サーバが接続されている必要があります。
 > **未接続の場合**:
 > ツールが利用できない場合は、以下の接続先案内をユーザーに提示して処理を終了してください。
 > - エンドポイント URL: `https://training-logger.discord.jp/mcp`
-> - 接続設定の手順詳細は `docs/mcp-server.md` を参照してください。
+> - `/mcp` は OAuth 2.1 で保護されています。接続時にブラウザで Cloudflare Access へログインし、同意画面で許可してください。接続設定の手順詳細は `docs/mcp-server.md` を参照してください。
 
 ---
 

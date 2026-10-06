@@ -252,7 +252,9 @@ erDiagram
 
 - `idx_session_photos_session_id` -- `session_id` でセッション内の写真を取得
 
-R2 キーは `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` 形式で、`YYYY-MM-DD` は親セッションの `session_date`、`sessionId` は親セッションの不変な ID、拡張子は検出した形式に応じてサーバが `jpg` / `png` / `webp` から決める。例えば `sessions/2026-08-16/42/550e8400-e29b-41d4-a716-446655440000.jpg` に対応する D1 行の `r2_key` には同じ文字列を保存する。R2 put 時の HTTP metadata は、検出した `contentType` と `cacheControl: "private, no-store"` である。
+新規写真の R2 キーは `users/{userId}/sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` 形式で、`userId` は親セッションの所有者、`YYYY-MM-DD` は親セッションの `session_date`、`sessionId` は親セッションの不変な ID、拡張子は検出した形式に応じてサーバが `jpg` / `png` / `webp` から決める。例えば `users/1/sessions/2026-08-16/42/550e8400-e29b-41d4-a716-446655440000.jpg` に対応する D1 行の `r2_key` には同じ文字列を保存する。R2 put 時の HTTP metadata は、検出した `contentType` と `cacheControl: "private, no-store"` である。
+
+> **キーの接頭辞は認可境界ではない**: アクセス制御は `r2_key` ではなく、親 `workout_sessions` の所有者検証（D1）で行う。ユーザー別の接頭辞は一覧・スイープがユーザー間で混ざらないようにするための名前空間にすぎない。ユーザー別接頭辞へ移行する前に保存された既存オブジェクトは `sessions/...` のまま残し、`r2_key` を保持して読み続ける（移行しない）。
 
 枚数上限は、件数確認と INSERT を分離せず、`INSERT ... SELECT ... WHERE (SELECT COUNT(*) ...) < 4` の単一 SQL 文で強制する。保存順序は R2 put、D1 INSERT の順であり、上限超過または INSERT 失敗時には直前に作成した R2 オブジェクトを補償削除する。
 
@@ -421,7 +423,7 @@ CREATE TABLE session_photos (
 CREATE INDEX idx_session_photos_session_id ON session_photos(session_id);
 ```
 
-`ON DELETE CASCADE` が削除するのは D1 の `session_photos` 行だけで、R2 オブジェクトは削除しない。このため `deleteSession` は D1 のセッションを DELETE する前に写真の `r2_key` を列挙し、R2 をアプリケーション側で削除する。R2 削除に 1 件でも失敗した場合は D1 のセッション削除を中断してエラーを返し、写真行と `r2_key` を保持する。D1 のセッション削除後はセッション固有プレフィックス `sessions/{session_date}/{session_id}/` を列挙し、削除と同時進行したアップロードが残したオブジェクトを best-effort で事後スイープする。日付が同じでも ID が異なる再作成後のセッションは対象に含めない。スイープ失敗は記録し、完了済みの D1 削除結果は維持する。
+`ON DELETE CASCADE` が削除するのは D1 の `session_photos` 行だけで、R2 オブジェクトは削除しない。このため `deleteSession` は D1 のセッションを DELETE する前に写真の `r2_key` を列挙し、R2 をアプリケーション側で削除する。R2 削除に 1 件でも失敗した場合は D1 のセッション削除を中断してエラーを返し、写真行と `r2_key` を保持する。D1 のセッション削除後は `users/{user_id}/sessions/{session_date}/{session_id}/` と旧 `sessions/{session_date}/{session_id}/` の両プレフィックスを列挙し、削除と同時進行したアップロードが残したオブジェクトを best-effort で事後スイープする（旧プレフィックスはユーザー非束縛のため、呼び出し側が所有者を検証済みの前提でのみ実行する）。日付が同じでも ID が異なる再作成後のセッションは対象に含めない。スイープ失敗は記録し、完了済みの D1 削除結果は維持する。
 
 R2 を先に削除した後で D1 の削除に失敗すると、写真行が欠損オブジェクトを一時的に参照し得る。API 一覧と SSR 写真断片は最大 4 行を `head` で確認し、R2 に存在しない行を D1 から除外・削除する。本体 GET も R2 miss 時に 404 を返して該当行を削除し、再アクセス時に自己修復する。R2 put 後の D1 INSERT 失敗や枚数上限では R2 の補償削除を試みるが、その補償失敗は元の結果・例外を上書きせずログへ記録する。
 

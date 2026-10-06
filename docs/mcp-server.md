@@ -11,6 +11,8 @@ MCP は LLM アプリケーションが外部ツール・データソースに�
 - MCP プロトコルバージョン: `2025-11-25`（現行安定版）
 - トランスポート: Streamable HTTP
 - 実装方式: ステートレス（リクエストごとに `McpServer` をインスタンス化）
+- 認可: OAuth 2.1（`@cloudflare/workers-oauth-provider`）。`/mcp` は Bearer access token 必須
+- 上流 IdP: Cloudflare Access。`/authorize` で Access JWT の `sub` を内部 `users.id` に解決して grant に束縛する
 
 ### SDK
 
@@ -19,7 +21,7 @@ MCP は LLM アプリケーションが外部ツール・データソースに�
 
 ### 実装
 
-Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処理する JSON-RPC メソッド:
+Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。ただしリクエストは先に `OAuthProvider` が access token を検証し、認可済みのものだけが `apiHandler` に届く。処理する JSON-RPC メソッド:
 
 - `initialize` -- クライアントとのハンドシェイク
 - `tools/list` -- 利用可能なツール一覧の返却
@@ -28,6 +30,47 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 このほか SDK が `notifications/initialized` や `ping` などにも応答する。ここでは業務上重要な 3 メソッドを示す。
 
 **GET リクエストには 405 Method Not Allowed を返す**。本サーバは SSE ストリームを提供しないステートレス実装であり、Streamable HTTP 仕様に基づきサーバは GET に対して 405 を返してよい。
+
+## 認可（OAuth 2.1）
+
+`/mcp` は認証必須で、`@cloudflare/workers-oauth-provider` の `OAuthProvider` が access token を検証してから `apiHandler` へ渡す。未認証リクエストは 401 と `WWW-Authenticate: Bearer resource_metadata="https://training-logger.discord.jp/.well-known/oauth-protected-resource/mcp"`（`resource` / `scope` は PRM に合わせる）を返す。クライアントは PRM と AS metadata を取得し、PKCE (S256) で `/authorize` → `/oauth/token` を経由して access token を得る。
+
+| エンドポイント | 実装 | 用途 |
+|---|---|---|
+| `/.well-known/oauth-protected-resource/mcp` | ライブラリ | PRM。`resource` / `authorization_servers` / `scopes_supported`（`mcp:read` のみ） |
+| `/.well-known/oauth-authorization-server` | ライブラリ | AS metadata。全 scope と `client_id_metadata_document_supported` |
+| `/authorize` | `src/oauth/authorize.tsx` | 同意画面。Access JWT 必須 |
+| `/oauth/token` | ライブラリ | code / refresh token の交換 |
+| `/oauth/register` | ライブラリ | DCR。`OAUTH_DCR_ENABLED=1` のときだけ公開 |
+
+### スコープ
+
+`mcp:read` / `mcp:write` / `photos:write` を基本とする。`mcp:write` は `mcp:read` を含意しない。`apiHandler` が `tools/call` のツール名から必要 scope を検査し、不足時は 403 `insufficient_scope` で step-up を促す。challenge の `scope` は「現在の scope（`offline_access` を除く）∪ 不足分」の和集合で、クライアントはこれを正として再認可する。ツール層（`src/mcp/tools/guard.ts`）にも同じ表で二重のガードがある。
+
+| ツール | 必要 scope |
+|---|---|
+| `get_history` / `search_exercises` / `list_atlas_muscles` | `mcp:read` |
+| `log_workout` / `update_workout` / `delete_workout` / `register_exercise` / `set_exercise_muscles` / `create_feedback` | `mcp:write` |
+| `create_photo_upload_link` / `upload_session_photo` | `photos:write` |
+
+`offline_access` は AS metadata にだけ載せ、PRM と `WWW-Authenticate` の `scope` には載せない（MCP 仕様の SHOULD NOT）。
+
+### ロール（owner / member）
+
+`exercises` / `exercise_aliases` は共有マスタを維持するため、共有状態を変え得る操作は `users.role = 'owner'` に限定する。`apiHandler` が毎リクエスト `users.role` を取得し、ツール層が `requireOwner` で検査する（メンバーにはツールエラーを返す）。
+
+- **owner 限定**: `set_exercise_muscles`、`create_feedback`、別名付きの `register_exercise`（`aliases` が 1 件以上のとき）
+- **認証済み全ユーザー**: `search_exercises`、`register_exercise`（別名なしの新規種目）、`list_atlas_muscles`、自分のデータへの `log_workout` / `update_workout` / `delete_workout` / `get_history` / 写真系
+
+### トークンとユーザー状態
+
+- access token TTL は 1 時間、refresh token（grant）は 30 日で使用時に回転する。
+- `apiHandler` は毎リクエスト `users.status` / `users.role` を D1 で照会し、`status != 'active'` または不在なら 401 `account_inactive` を返す。許可リストから外した後も発行済み token が TTL まで有効なため、`users.status = 'disabled'` で即時拒否できる。grant の失効は `src/oauth/revocation.ts` のヘルパーでユーザー単位に行う。
+- `props.userId` は `/authorize` で束縛した内部 `users.id`（INTEGER）。`createMcpServer` へはこの値だけを渡し、外部 Access `sub` は DB 層へ渡さない。
+
+### クライアント登録と redirect 許可リスト
+
+`clientIdMetadataDocumentEnabled: true` により CIMD（Client ID Metadata Document）を有効にする。DCR は既定で無効（`/oauth/register` は 404、AS metadata に `registration_endpoint` を載せない）。`OAUTH_DCR_ENABLED=1` のときだけ有効になり、登録時も redirect_uri のホストを許可リストで検査する。redirect_uri / CIMD `client_id` のホストは既定で `chatgpt.com` / `claude.ai` / `claude.com` を許可し、`OAUTH_ALLOWED_REDIRECT_HOSTS`（カンマ区切り）で上書きする。
 
 ## ツール定義
 
@@ -413,7 +456,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 
 **挙動**:
 
-- `delete_entire_session = true` の場合: 写真本体を R2 から削除してから `workout_sessions` を DELETE する。CASCADE により配下の `session_photos`、`session_exercises`、`sets` も削除される。D1 削除後の事後スイープは `sessions/{YYYY-MM-DD}/{sessionId}/` のセッション固有プレフィックスだけを対象にする
+- `delete_entire_session = true` の場合: 写真本体を R2 から削除してから `workout_sessions` を DELETE する。CASCADE により配下の `session_photos`、`session_exercises`、`sets` も削除される。D1 削除後の事後スイープは `users/{userId}/sessions/{YYYY-MM-DD}/{sessionId}/` と旧 `sessions/{YYYY-MM-DD}/{sessionId}/` の両プレフィックスを対象にする
 - `delete_entire_session = false` の場合: 指定した `session_exercises` を DELETE する。CASCADE により配下の `sets` も削除される
 
 **エラー応答**:
@@ -505,7 +548,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 1. `date` で `workout_sessions` を検索する
 2. セッションがあれば、`session_id`、`date`、`https://training-logger.discord.jp/sessions/{session_id}#photos`、上限情報を返す
 3. ユーザーには返された URL をブラウザで開き、写真セクションから同じ写真を選ぶよう案内する
-4. ブラウザから保存された写真本体は R2 の `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` キーに格納する
+4. ブラウザから保存された写真本体は R2 の `users/{userId}/sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` キーに格納する
 
 ```json
 {
@@ -563,7 +606,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。処�
 1. `date` で既存の `workout_sessions` を検索する
 2. ハンドラでのデコード前に `data_base64` が 13,981,016 文字以下で、改行や URL-safe 文字を含まず、標準 base64 の文字集合、末尾の `=` パディング、未使用 pad bit が 0 の正規形式だけを使っていることを検証する
 3. デコードした bytes の magic bytes から JPEG / PNG / WebP を判定する。任意の `content_type` が指定されても信用せず、判定結果と一致しなければ保存しない
-4. 共通の `storeSessionPhoto` で 10 MiB と 1 セッション 4 枚の上限を再検証し、R2 の `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` に保存する
+4. 共通の `storeSessionPhoto` で 10 MiB と 1 セッション 4 枚の上限を再検証し、親セッションの所有者を確認してから R2 の `users/{userId}/sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` に保存する
 5. `{ photo_id, session_id, date, content_type, size_bytes, url }` を返す。`url` は `/api/sessions/{session_id}/photos/{photo_id}` 形式で、画像本体をツール結果には含めない
 
 **エラー応答**:
@@ -741,15 +784,15 @@ https://training-logger.discord.jp/mcp
 
 カスタムドメインを設定済み。写真を保存する場合、Claude Code などローカルファイルを読める環境では記録後に `upload_session_photo` で base64 を直接送信できる。それ以外のクライアントでは `create_photo_upload_link` が返す URL をブラウザで開いてアップロードする。チャットの添付画像を MCP のツール引数へそのまま渡す標準経路はない。
 
-`POST /mcp` は `upload_session_photo` の入力として base64 を受け付けるが、ツール結果から保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。写真 API は GET / POST / DELETE のいずれも Worker 内で Access JWT を検証し（取得の GET は CSRF 検査なし）、`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定なら 401 `access_not_configured` を返す。したがって `upload_session_photo` が返す `url` も Access を設定しない限り取得できない。
+`POST /mcp` は `upload_session_photo` の入力として base64 を受け付けるが、ツール結果から保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。写真 API は GET / POST / DELETE のいずれも Worker 内で Access JWT を検証し（取得の GET は CSRF 検査なし）、`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定なら 401 `access_not_configured` を返す。したがって `upload_session_photo` が返す `url` は Access にログインしたブラウザで開く必要がある。
 
 ### セキュリティ境界
 
-`/mcp` は現在認証なしで公開しているため、`upload_session_photo` を使って誰でも R2 に書き込める。上限はセッションあたり 4 枚 × 10 MiB だが、セッション自体も認証なしの `log_workout` で作成できるため、R2 への書き込み総量に上限はない。このリスクを受容し、`/mcp` への認証追加を前提とした暫定運用とする。枚数・サイズ上限は入力事故の緩和策であり、認可対策ではない。
+`/mcp` は OAuth 2.1 で保護する。`upload_session_photo` を含む全ツールは access token の検証後に `props.userId`（内部 `users.id`）が渡り、`log_workout` などの書き込みもそのユーザーのデータに限定される。枚数（1 セッション 4 枚）・サイズ（1 枚 10 MiB）上限は入力事故の緩和策であり、認可対策ではない。
 
-一方、ブラウザ経由の写真 API は Worker 内でも Cloudflare Access JWT を検証する。`GET /api/sessions/:id/photos` と `GET /api/sessions/:id/photos/:photoId` は読み取りとして JWT のみ検証し（CSRF 検査なし）、`POST` と `DELETE` は加えて Fetch Metadata の CSRF 検査を行う。`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定なら読み取り・書き込みとも 401 `access_not_configured` で fail-closed になる。Zero Trust では custom domain の `/mcp` だけを Bypass とし、`/sessions/*` と `/api/*` は Allow ポリシー配下に置く。Skill の公開配布 URL が必要な場合は `/skills/*` も限定的に Bypass できる。
+ブラウザ経由の写真 API は `registerAccessAuth` の deny-by-default 認証ミドルウェアで保護する。`GET /api/sessions/:id/photos` と `GET /api/sessions/:id/photos/:photoId` は読み取り（CSRF 検査なし）、`POST` / `DELETE` は加えて Fetch Metadata の CSRF 検査を行う。`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定なら（開発フォールバックを除き）読み取り・書き込みとも 401 `access_not_configured` で fail-closed になる。Zero Trust では `/mcp`・`/oauth/token`・`/oauth/register`（使う場合）・`/.well-known/*` を Bypass にして OAuth の discovery / token を到達可能にし、`/authorize` は Allow 側で `aud` をそろえる。`/sessions/*`・`/api/*` などそれ以外は Allow 配下に置く。Skill の公開配布 URL が必要な場合は `/skills/*` も限定的に Bypass できる。
 
-`wrangler.jsonc` は `workers_dev: false` に設定済みであり、`*.workers.dev` URL は無効である。配信経路は custom domain のみに限定する。有効化方法は [deployment.md](./deployment.md) の手順 5 を参照。
+`wrangler.jsonc` は `workers_dev: false` に設定済みであり、`*.workers.dev` URL は無効である。配信経路は custom domain のみに限定する。有効化方法は [deployment.md](./deployment.md) を参照。
 
 ### ChatGPT
 
@@ -757,8 +800,8 @@ https://training-logger.discord.jp/mcp
 
 1. Settings -> Apps -> Advanced で **Developer mode** を有効化する
 2. Settings -> Apps -> **Connectors** -> Create を選択する
-3. URL にエンドポイント URL を入力し、Authentication は **None** を選択する
-4. 保存する
+3. URL にエンドポイント URL を入力し、Authentication は **OAuth** を選択する
+4. 保存し、認可を求められたらブラウザで `/authorize` を開き、Cloudflare Access にログインして同意画面で許可する
 
 **注意事項**:
 
@@ -772,12 +815,13 @@ https://training-logger.discord.jp/mcp
 出典: https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp
 
 1. Settings -> **Connectors** -> Add custom connector を選択する
-2. URL にエンドポイント URL を入力し、認証は **None** を選択する
-3. 保存する
+2. URL にエンドポイント URL を入力し、認証は **OAuth** を選択する
+3. 保存し、認可を求められたらブラウザで `/authorize` を開き、Cloudflare Access にログインして同意画面で許可する
 
 **注意事項**:
 
 - Free プランでもカスタムコネクタを 1 個まで登録可能
+- 既存のコネクタは編集できないため、認証方式を変える場合は削除して登録し直す
 - 添付画像の保存には `create_photo_upload_link` の URL をブラウザで開き、同じ画像を選択する
 
 ### Claude Desktop
