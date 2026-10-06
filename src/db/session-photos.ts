@@ -1,4 +1,5 @@
 import type { Bindings } from "../env.js";
+import { assertSessionOwned } from "./sessions.js";
 import type { SessionPhotoRow } from "./types.js";
 
 export const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
@@ -155,6 +156,15 @@ async function compensateR2Put(
 	}
 }
 
+/**
+ * Store a photo for a session owned by the given user.
+ *
+ * The parent session is verified here before anything is written. Callers
+ * usually resolve the session with getSessionById / getSessionByDate, but the
+ * guard is kept so a mis-scoped call cannot insert a child row (and consume one
+ * of the four photo slots) on another user's session. This mirrors the
+ * precondition createSessionExercise enforces with assertSessionOwned.
+ */
 export async function storeSessionPhoto(
 	env: Pick<Bindings, "DB" | "PHOTOS">,
 	userId: number,
@@ -167,6 +177,9 @@ export async function storeSessionPhoto(
 			error: "unsupported_type" | "too_large" | "limit_exceeded";
 	  }
 > {
+	if (!(await assertSessionOwned(env.DB, userId, session.id))) {
+		throw new Error("Session not found");
+	}
 	if (bytes.byteLength > PHOTO_MAX_BYTES) {
 		return { ok: false, error: "too_large" };
 	}
@@ -255,6 +268,13 @@ export async function deleteSessionPhotosForSession(
  * Best-effort cleanup for objects created concurrently with session deletion.
  * Sweeps both the current user-scoped prefix and the legacy prefix so objects
  * left by older code paths are removed too.
+ *
+ * Precondition: the caller must have verified that the session belongs to
+ * `userId` (for example through getSessionById) before calling. This function
+ * does not query D1 and cannot detect a mis-scoped call. The legacy
+ * `sessions/{date}/{id}/` prefix predates user namespacing and is not bound to
+ * a user, so only delete a session the user actually owns. The key prefix is
+ * not an authorization boundary; ownership is enforced in D1.
  */
 export async function sweepSessionPhotoObjects(
 	bucket: R2Bucket,

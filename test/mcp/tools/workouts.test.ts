@@ -701,4 +701,75 @@ describe("workout tools", () => {
 			expect(result.deleted).toBe("exercise");
 		});
 	});
+
+	describe("cross-user isolation", () => {
+		beforeEach(async () => {
+			await env.DB.prepare(
+				"INSERT INTO users (id, display_name, status, role) VALUES (2, NULL, 'active', 'member')",
+			).run();
+		});
+
+		it("does not let a user update or delete another user's workout by date", async () => {
+			await logWorkoutHandler(env, 2, {
+				date: "2026-08-16",
+				exercises: [{ name: "スクワット", sets: [{ reps: 10 }] }],
+			});
+
+			await expect(
+				updateWorkoutHandler(env, 1, {
+					date: "2026-08-16",
+					exercise_name: "スクワット",
+					notes: "越境更新",
+				}),
+			).rejects.toThrow("No session found");
+
+			await expect(
+				deleteWorkoutHandler(env, 1, {
+					date: "2026-08-16",
+					delete_entire_session: true,
+				}),
+			).rejects.toThrow("No session found");
+
+			expect(await getSessionByDate(env.DB, 2, "2026-08-16")).not.toBeNull();
+		});
+
+		it("does not let a user target another user's session_exercise_id", async () => {
+			const loggedB = await logWorkoutHandler(env, 2, {
+				date: "2026-08-16",
+				exercises: [{ name: "スクワット", sets: [{ reps: 10 }] }],
+			});
+			const { results } = await env.DB.prepare(
+				"SELECT id FROM session_exercises WHERE session_id = ?",
+			)
+				.bind(loggedB.session_id)
+				.all<{ id: number }>();
+
+			// User A has its own session on the same date, but must not reach B's row.
+			await logWorkoutHandler(env, 1, {
+				date: "2026-08-16",
+				exercises: [{ name: "ベンチプレス", sets: [{ reps: 5 }] }],
+			});
+
+			await expect(
+				updateWorkoutHandler(env, 1, {
+					date: "2026-08-16",
+					session_exercise_id: results[0].id,
+					status: "skipped",
+				}),
+			).rejects.toThrow("not found in this session");
+		});
+
+		it("keeps two users' logs on the same date separate", async () => {
+			const loggedA = await logWorkoutHandler(env, 1, {
+				date: "2026-08-16",
+				exercises: [{ name: "ベンチプレス", sets: [{ reps: 10, weight: 60 }] }],
+			});
+			const loggedB = await logWorkoutHandler(env, 2, {
+				date: "2026-08-16",
+				exercises: [{ name: "スクワット", sets: [{ reps: 10, weight: 100 }] }],
+			});
+
+			expect(loggedA.session_id).not.toBe(loggedB.session_id);
+		});
+	});
 });

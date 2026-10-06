@@ -76,6 +76,21 @@ describe("view user isolation", () => {
 			const html = await response.text();
 			expect(html).not.toContain("USER-B-SECRET");
 		});
+
+		it("returns 404 for another user's photo page", async () => {
+			const response = await app.request("/sessions/2/photos", {}, env);
+			expect(response.status).toBe(404);
+		});
+
+		it("links prev/next only to the same user's sessions", async () => {
+			await env.DB.prepare(
+				"INSERT INTO workout_sessions (id, user_id, session_date, goal) VALUES (3, 1, '2026-08-17', 'USER-A-LATER')",
+			).run();
+
+			const html = await (await app.request("/sessions/1", {}, env)).text();
+			expect(html).toContain("/sessions/3");
+			expect(html).not.toContain("/sessions/2");
+		});
 	});
 
 	describe("GET /exercises (exercise list)", () => {

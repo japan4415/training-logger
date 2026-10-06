@@ -281,6 +281,82 @@ describe("session photos DB service", () => {
 		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(0);
 	});
 
+	it("rejects another user's session without writing D1 rows or R2 objects", async () => {
+		await env.DB.prepare(
+			"INSERT INTO users (id, display_name, status, role) VALUES (2, NULL, 'active', 'member')",
+		).run();
+		const { session } = await getOrCreateSession(env.DB, 1, {
+			sessionDate: "2026-09-14",
+		});
+
+		await expect(
+			storeSessionPhoto(env, 2, session, IMAGES.jpeg),
+		).rejects.toThrow("Session not found");
+
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(0);
+		expect(
+			await env.DB.prepare(
+				"SELECT COUNT(*) AS count FROM session_photos WHERE session_id = ?",
+			)
+				.bind(session.id)
+				.first<{ count: number }>(),
+		).toMatchObject({ count: 0 });
+		expect(
+			(await env.PHOTOS.list({ prefix: "users/2/sessions/" })).objects,
+		).toHaveLength(0);
+	});
+
+	it("sweeping one user's session keeps another user's objects", async () => {
+		await env.DB.prepare(
+			"INSERT INTO users (id, display_name, status, role) VALUES (2, NULL, 'active', 'member')",
+		).run();
+		const { session: a } = await getOrCreateSession(env.DB, 1, {
+			sessionDate: "2026-09-14",
+		});
+		const { session: b } = await getOrCreateSession(env.DB, 2, {
+			sessionDate: "2026-09-14",
+		});
+		const storedA = await storeSessionPhoto(env, 1, a, IMAGES.jpeg);
+		const storedB = await storeSessionPhoto(env, 2, b, IMAGES.webp);
+		if (!storedA.ok || !storedB.ok) throw new Error("store failed");
+
+		expect(await deleteSession(env, 1, a.id)).toBe(true);
+
+		expect(await env.PHOTOS.get(storedA.photo.r2_key)).toBeNull();
+		expect(await env.PHOTOS.get(storedB.photo.r2_key)).not.toBeNull();
+		expect(await listSessionPhotos(env.DB, 2, b.id)).toHaveLength(1);
+	});
+
+	it("post-sweeps an object created under the user prefix during deletion", async () => {
+		const { session } = await getOrCreateSession(env.DB, 1, {
+			sessionDate: "2026-09-14",
+		});
+		const stored = await storeSessionPhoto(env, 1, session, IMAGES.webp);
+		if (!stored.ok) throw new Error(stored.error);
+		const injectedKey = `users/1/sessions/2026-09-14/${session.id}/concurrent-upload.jpg`;
+		let injected = false;
+		const photos = new Proxy(env.PHOTOS, {
+			get(target, property) {
+				if (property === "delete") {
+					return async (keys: string | string[]) => {
+						await target.delete(keys);
+						if (!injected) {
+							injected = true;
+							await target.put(injectedKey, IMAGES.jpeg);
+						}
+					};
+				}
+				const value = Reflect.get(target, property, target);
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+		});
+
+		expect(await deleteSession({ ...env, PHOTOS: photos }, 1, session.id)).toBe(
+			true,
+		);
+		expect(await env.PHOTOS.get(injectedKey)).toBeNull();
+	});
+
 	it("post-sweeps an object created during session deletion", async () => {
 		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",

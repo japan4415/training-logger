@@ -181,4 +181,25 @@ describe("MCP photo tools", () => {
 			message: expect.stringContaining("先に log_workout で登録してください"),
 		});
 	});
+
+	it("does not create a link or upload on another user's date", async () => {
+		await env.DB.prepare(
+			"INSERT INTO users (id, display_name, status, role) VALUES (2, NULL, 'active', 'member')",
+		).run();
+		const { session } = await getOrCreateSession(env.DB, 1, {
+			sessionDate: "2026-09-14",
+		});
+
+		expect(
+			await createPhotoUploadLinkHandler(env, 2, { date: "2026-09-14" }),
+		).toMatchObject({ isError: true });
+		expect(
+			await uploadSessionPhotoHandler(env, 2, {
+				date: "2026-09-14",
+				data_base64: base64(PNG),
+			}),
+		).toMatchObject({ isError: true, error: "session_not_found" });
+
+		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(0);
+	});
 });

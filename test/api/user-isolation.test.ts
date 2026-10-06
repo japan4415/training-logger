@@ -34,12 +34,32 @@ async function seedIsolationData(): Promise<void> {
 		env.DB.prepare(
 			"INSERT INTO sets (session_exercise_id, set_order, is_planned, reps, weight_value, weight_unit) VALUES (2, 1, 0, 10, 999, 'kg')",
 		),
+		env.DB.prepare(
+			"INSERT INTO session_photos (id, session_id, r2_key, content_type, size_bytes) VALUES ('b-photo', 2, 'sessions/2026-08-16/2/b.jpg', 'image/jpeg', 100)",
+		),
 	]);
 }
 
 async function fetchJson(path: string) {
 	const res = await app.request(path, {}, env);
 	return { res, body: (await res.json()) as Record<string, unknown> };
+}
+
+const SAME_ORIGIN = { "Sec-Fetch-Site": "same-origin" };
+const allowEnv = () => ({
+	...env,
+	PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1",
+});
+
+function photoForm() {
+	const form = new FormData();
+	form.set(
+		"photo",
+		new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "photo.jpg", {
+			type: "image/jpeg",
+		}),
+	);
+	return form;
 }
 
 describe("API user isolation", () => {
@@ -81,5 +101,41 @@ describe("API user isolation", () => {
 		expect(stats[0].date).toBe("2026-08-15");
 		const maxByUnit = stats[0].max_weight_by_unit as Record<string, number>;
 		expect(maxByUnit.kg).toBe(60);
+	});
+
+	it("returns 404 when reading another user's photos", async () => {
+		expect(
+			(await app.request("/api/sessions/2/photos", {}, allowEnv())).status,
+		).toBe(404);
+		expect(
+			(await app.request("/api/sessions/2/photos/b-photo", {}, allowEnv()))
+				.status,
+		).toBe(404);
+	});
+
+	it("returns 404 when mutating another user's photos and keeps them", async () => {
+		const posted = await app.request(
+			"/api/sessions/2/photos",
+			{
+				method: "POST",
+				headers: { ...SAME_ORIGIN, "Content-Length": "1024" },
+				body: photoForm(),
+			},
+			allowEnv(),
+		);
+		expect(posted.status).toBe(404);
+
+		const deleted = await app.request(
+			"/api/sessions/2/photos/b-photo",
+			{ method: "DELETE", headers: SAME_ORIGIN },
+			allowEnv(),
+		);
+		expect(deleted.status).toBe(404);
+
+		expect(
+			await env.DB.prepare("SELECT id FROM session_photos WHERE id = ?")
+				.bind("b-photo")
+				.first(),
+		).not.toBeNull();
 	});
 });
