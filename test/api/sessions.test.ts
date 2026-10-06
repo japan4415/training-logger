@@ -5,11 +5,16 @@ import { registerApiRoutes } from "../../src/api/routes.js";
 import { registerExercise } from "../../src/db/exercises.js";
 import { createSessionExercise, replaceSets } from "../../src/db/records.js";
 import { getOrCreateSession } from "../../src/db/sessions.js";
-import type { Bindings } from "../../src/env.js";
+import type { AppEnv } from "../../src/env.js";
+import { registerAccessAuth } from "../../src/security/auth.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<AppEnv>();
+registerAccessAuth(app);
 registerApiRoutes(app);
+
+/** ローカル開発フォールバックを有効にした bindings。 */
+const authEnv = { ...env, PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1" };
 
 /** Seed test data: two sessions in Aug 2026. */
 async function seedTestData() {
@@ -76,7 +81,7 @@ async function seedTestData() {
 }
 
 async function fetchJson(path: string) {
-	const res = await app.request(path, {}, env);
+	const res = await app.request(path, {}, authEnv);
 	return { res, body: (await res.json()) as Record<string, unknown> };
 }
 

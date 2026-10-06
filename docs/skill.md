@@ -27,7 +27,7 @@ claude.ai の Web インターフェースで Skill を登録する。
 4. 有効化されていることを確認する。
 
 > **Cloudflare Access に関する注意**:
-> アプリ実装にサイト全体の Access ミドルウェアは無く、Worker 内での Access JWT 検証は写真 API（`/api/sessions/:id/photos*` の GET / POST / DELETE）にのみ適用される。`/skills/*` を遮断するかどうかは Cloudflare Zero Trust で custom domain に設定する Access ポリシー次第である。`/skills/*` へのアクセスが遮断される環境では、Access ポリシーに `/skills/*` の Bypass を設定するか、リポジトリの `public/skills/log-workout.zip` を直接取得してアップロードすること。
+> Worker は `/skills/*` と静的アセットを公開パスとして扱うが、Cloudflare Zero Trust の Access ポリシーはホスト全体を deny-by-default にできる。`/skills/*` へのアクセスが遮断される環境では、Access ポリシーに `/skills/*` の Bypass を設定するか、リポジトリの `public/skills/log-workout.zip` を直接取得してアップロードすること。
 
 ### 2. Claude Code
 

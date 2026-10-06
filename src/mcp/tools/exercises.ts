@@ -11,6 +11,8 @@ import {
 	parseAtlasAssignment,
 } from "../../domain/atlas.js";
 import type { Bindings } from "../../env.js";
+import type { McpContext } from "../context.js";
+import { requireOwner, requireScope, toolError } from "./guard.js";
 
 // ---- Response types ----
 
@@ -180,7 +182,11 @@ async function findConflictingExercises(
 	return searchExercisesHandler(env, { query: name });
 }
 
-export function registerExerciseTools(server: McpServer, env: Bindings): void {
+export function registerExerciseTools(
+	server: McpServer,
+	env: Bindings,
+	ctx: McpContext,
+): void {
 	server.registerTool(
 		"list_atlas_muscles",
 		{
@@ -195,14 +201,18 @@ export function registerExerciseTools(server: McpServer, env: Bindings): void {
 					.describe("筋肉ID・英語名・日本語名・部位の部分一致"),
 			},
 		},
-		async (args) => ({
-			content: [
-				{
-					type: "text" as const,
-					text: JSON.stringify(listAtlasMusclesHandler(args)),
-				},
-			],
-		}),
+		async (args) => {
+			const denied = requireScope(ctx, "list_atlas_muscles");
+			if (denied) return denied;
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(listAtlasMusclesHandler(args)),
+					},
+				],
+			};
+		},
 	);
 
 	server.registerTool(
@@ -216,6 +226,9 @@ export function registerExerciseTools(server: McpServer, env: Bindings): void {
 			},
 		},
 		async (args) => {
+			const denied =
+				requireOwner(ctx) ?? requireScope(ctx, "set_exercise_muscles");
+			if (denied) return denied;
 			try {
 				const result = await setExerciseMusclesHandler(env, args);
 				return {
@@ -251,6 +264,8 @@ export function registerExerciseTools(server: McpServer, env: Bindings): void {
 			},
 		},
 		async (args) => {
+			const denied = requireScope(ctx, "search_exercises");
+			if (denied) return denied;
 			const result = await searchExercisesHandler(env, {
 				query: args.query,
 				category: args.category,
@@ -281,6 +296,14 @@ export function registerExerciseTools(server: McpServer, env: Bindings): void {
 			},
 		},
 		async (args) => {
+			const denied = requireScope(ctx, "register_exercise");
+			if (denied) return denied;
+			// 別名はグローバル UNIQUE の共有マスタを書き換え、他ユーザーの種目解決
+			// （LIKE 部分一致を含む）に影響するため owner 限定。別名なしの新規種目は
+			// 認証済み全ユーザーに許可する（設計 §7）。
+			if (args.aliases && args.aliases.length > 0 && ctx.role !== "owner") {
+				return toolError("別名の登録はオーナーのみ実行できます。");
+			}
 			try {
 				const result = await registerExerciseHandler(env, {
 					name: args.name,

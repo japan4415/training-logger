@@ -9,5 +9,18 @@ GITHUB_TOKEN=github_pat_xxx
 # ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 # ACCESS_AUD=your-access-application-audience
 
-# ローカル開発で写真の書き込みを認証なしにする場合のみ有効化
+# ローカル開発で Web UI / REST API を認証なし（既定ユーザー users.id = 1）で使う場合に有効化。
+# 未設定だと認証必須のパス（Web UI / REST API / /authorize）は 401 access_not_configured を返す。
+# Host が localhost / 127.0.0.1（ポート付き可）のときだけ有効。本番では設定しない。
 # PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1
+
+# 同意画面の CSRF トークンに使う HMAC 鍵。本番では必須。
+# ローカル開発フォールバック（PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1 + ACCESS_* 未設定）では
+# 固定のダミー鍵が使われるため設定不要。
+# OAUTH_CONSENT_SECRET=
+
+# DCR（/oauth/register）を有効化する場合は 1（既定は無効。公開する場合は Rate Limiting / WAF を掛ける）
+# OAUTH_DCR_ENABLED=1
+
+# redirect_uri / CIMD client_id のホスト許可リスト（カンマ区切り）
+# OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,claude.ai,claude.com

@@ -10,6 +10,8 @@ import {
 } from "../../db/session-photos.js";
 import { getSessionByDate } from "../../db/sessions.js";
 import type { Bindings } from "../../env.js";
+import type { McpContext } from "../context.js";
+import { requireScope } from "./guard.js";
 
 const SITE_ORIGIN = "https://training-logger.discord.jp";
 
@@ -29,6 +31,8 @@ export async function createPhotoUploadLinkHandler(
 	userId: number,
 	params: { date: string },
 ) {
+	// 日付だけでなく userId でも絞るため、他ユーザーの同日セッションには到達しない。
+	// 返す URL の `/sessions/:id` も同じ行の id なので、リンク先の所有も同時に確定する。
 	const session = await getSessionByDate(env.DB, userId, params.date);
 	if (!session) {
 		return {
@@ -159,7 +163,7 @@ function toolResponse(result: unknown) {
 export function registerPhotoTools(
 	server: McpServer,
 	env: Bindings,
-	userId: number,
+	ctx: McpContext,
 ): void {
 	server.registerTool(
 		"create_photo_upload_link",
@@ -173,8 +177,13 @@ export function registerPhotoTools(
 					.describe("セッション日付 (YYYY-MM-DD)"),
 			},
 		},
-		async (args) =>
-			toolResponse(await createPhotoUploadLinkHandler(env, userId, args)),
+		async (args) => {
+			const denied = requireScope(ctx, "create_photo_upload_link");
+			if (denied) return denied;
+			return toolResponse(
+				await createPhotoUploadLinkHandler(env, ctx.userId, args),
+			);
+		},
 	);
 
 	server.registerTool(
@@ -199,7 +208,12 @@ export function registerPhotoTools(
 					),
 			},
 		},
-		async (args) =>
-			toolResponse(await uploadSessionPhotoHandler(env, userId, args)),
+		async (args) => {
+			const denied = requireScope(ctx, "upload_session_photo");
+			if (denied) return denied;
+			return toolResponse(
+				await uploadSessionPhotoHandler(env, ctx.userId, args),
+			);
+		},
 	);
 }

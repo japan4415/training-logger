@@ -3,8 +3,8 @@ import { raw } from "hono/html";
 import type { FC } from "hono/jsx";
 import { getExerciseAliases, getExerciseById } from "../db/exercises.js";
 import type { ExerciseAliasRow, ExerciseRow } from "../db/types.js";
-import { DEFAULT_USER_ID } from "../default-user.js";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
+import { requireUserId } from "../security/auth.js";
 import {
 	ChartContainer,
 	type ChartData,
@@ -516,9 +516,7 @@ const ChartSectionContent: FC<{
 // Route registration
 // ---------------------------------------------------------------------------
 
-export function registerExerciseProgressRoutes(
-	app: Hono<{ Bindings: Bindings }>,
-): void {
+export function registerExerciseProgressRoutes(app: Hono<AppEnv>): void {
 	app.get("/exercises/:id", async (c) => {
 		const id = Number.parseInt(c.req.param("id"), 10);
 		if (Number.isNaN(id)) {
@@ -530,14 +528,15 @@ export function registerExerciseProgressRoutes(
 			return c.text("Exercise not found", 404);
 		}
 
+		const userId = requireUserId(c);
 		const period = parsePeriod(c.req.query("period"));
 		const dateFrom = getDateFrom(period);
 		const isHtmx = c.req.header("HX-Request") === "true";
 
 		const [aliases, chartData, history] = await Promise.all([
 			getExerciseAliases(c.env.DB, id),
-			fetchChartData(c.env.DB, DEFAULT_USER_ID, exercise, dateFrom),
-			fetchHistory(c.env.DB, DEFAULT_USER_ID, id, dateFrom),
+			fetchChartData(c.env.DB, userId, exercise, dateFrom),
+			fetchHistory(c.env.DB, userId, id, dateFrom),
 		]);
 
 		if (isHtmx) {

@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { getHistory } from "../db/queries.js";
-import { DEFAULT_USER_ID } from "../default-user.js";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
+import { requireUserId } from "../security/auth.js";
 import { SessionCard } from "./components/session-card.js";
 import { Layout } from "./layout.js";
 import {
@@ -141,7 +141,7 @@ function SessionListContent(props: {
  * - GET /          — Session list (month-based, htmx partial update)
  * - GET /sessions/:id — Session detail
  */
-export function registerSessionViews(app: Hono<{ Bindings: Bindings }>): void {
+export function registerSessionViews(app: Hono<AppEnv>): void {
 	// Session list
 	app.get("/", async (c) => {
 		const monthParam = c.req.query("month");
@@ -167,7 +167,7 @@ export function registerSessionViews(app: Hono<{ Bindings: Bindings }>): void {
 		}
 
 		const db = c.env.DB;
-		const sessions = await getHistory(db, DEFAULT_USER_ID, {
+		const sessions = await getHistory(db, requireUserId(c), {
 			dateFrom: monthStartDate(year, month),
 			dateTo: monthEndDate(year, month),
 			includeSets: false,

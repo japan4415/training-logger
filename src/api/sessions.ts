@@ -4,12 +4,12 @@ import {
 	getHistory,
 	getSessionDetail,
 } from "../db/queries.js";
-import { DEFAULT_USER_ID } from "../default-user.js";
 import {
 	mergeAtlasAssignments,
 	parseAtlasAssignment,
 } from "../domain/atlas.js";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
+import { requireUserId } from "../security/auth.js";
 
 /** Derive day of week (Japanese) from YYYY-MM-DD string. */
 function getDayOfWeek(dateStr: string): string {
@@ -36,8 +36,9 @@ function parseMonth(month: string): { year: number; month: number } | null {
  *   limit  - number  (defaults to 20)
  *   offset - number  (defaults to 0)
  */
-export async function listSessions(c: Context<{ Bindings: Bindings }>) {
+export async function listSessions(c: Context<AppEnv>) {
 	const db = c.env.DB;
+	const userId = requireUserId(c);
 
 	const monthParam = c.req.query("month");
 	const limitParam = c.req.query("limit");
@@ -75,7 +76,7 @@ export async function listSessions(c: Context<{ Bindings: Bindings }>) {
 	const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
 	// Fetch sessions with exercise info (no sets needed for list)
-	const allDetails = await getHistory(db, DEFAULT_USER_ID, {
+	const allDetails = await getHistory(db, userId, {
 		dateFrom: startDate,
 		dateTo: endDate,
 		includeSets: false,
@@ -102,7 +103,7 @@ export async function listSessions(c: Context<{ Bindings: Bindings }>) {
  *
  * Returns full session detail with exercises split into sets / planned_sets.
  */
-export async function getSession(c: Context<{ Bindings: Bindings }>) {
+export async function getSession(c: Context<AppEnv>) {
 	const db = c.env.DB;
 	const id = Number(c.req.param("id"));
 
@@ -110,7 +111,7 @@ export async function getSession(c: Context<{ Bindings: Bindings }>) {
 		return c.json({ error: "Invalid session ID" }, 400);
 	}
 
-	const detail = await getSessionDetail(db, DEFAULT_USER_ID, id);
+	const detail = await getSessionDetail(db, requireUserId(c), id);
 	if (!detail) {
 		return c.json({ error: "Session not found" }, 404);
 	}

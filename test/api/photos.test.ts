@@ -4,10 +4,12 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { registerApiRoutes } from "../../src/api/routes.js";
 import { PHOTO_MAX_BYTES } from "../../src/db/session-photos.js";
 import { getOrCreateSession } from "../../src/db/sessions.js";
-import type { Bindings } from "../../src/env.js";
+import type { AppEnv } from "../../src/env.js";
+import { registerAccessAuth } from "../../src/security/auth.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<AppEnv>();
+registerAccessAuth(app);
 registerApiRoutes(app);
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);

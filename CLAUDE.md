@@ -34,13 +34,17 @@ pnpm exec wrangler d1 migrations apply training-logger-db --local  # ローカ�
 - MCP ツール名・仕様は [docs/mcp-server.md](docs/mcp-server.md) に従う
 - ORM は不使用。D1 の SQLite 方言に対して SQL を直接記述する
 - テストは `test/` 以下に配置。`@cloudflare/vitest-pool-workers` で D1 バインディングを使用する
+- Web / REST / DB のユーザーデータ操作は内部 `users.id` を必須にする（外部 IdP の `sub` を DB 層へ渡さない）。他ユーザーの行は 404 として扱う
+- 認証は Web / REST が Cloudflare Access（`src/security/`）、MCP が OAuth 2.1（`src/oauth/`）。上流 IdP は Access に統一する
 
 ## ディレクトリ構成
 
-- `src/db/` - データアクセス層（ビジネスロジックの本体）
-- `src/mcp/` - MCP ハンドラ・ツール定義（薄く保ち、ロジックは `db/` に委譲）
+- `src/db/` - データアクセス層（ビジネスロジックの本体）。`users.ts` が `sub` → `users.id` を解決する
+- `src/mcp/` - MCP サーバ（薄く保ち、ロジックは `db/` に委譲。ツールの scope / role ガードを持つ）
+- `src/oauth/` - OAuth 2.1 認可サーバー（`OAuthProvider`・`/authorize` 同意画面・`/mcp` ハンドラ・grant 失効ヘルパー）
+- `src/security/` - Cloudflare Access JWT 検証と deny-by-default 認証ミドルウェア
 - `src/api/` - REST API（Web UI 向け、読み取り専用）
-- `src/views/` - SSR テンプレート（Hono JSX）
+- `src/views/` - SSR テンプレート（Hono JSX。OAuth 同意画面を含む）
 - `public/` - 静的ファイル（Workers Assets で配信）
-- `migrations/` - D1 マイグレーション SQL
-- `test/` - Vitest テスト
+- `migrations/` - D1 マイグレーション SQL（`0005` は `users` / `user_identities` と 4 テーブル再構築）
+- `test/` - Vitest テスト（`oauth/`・`security/` を含む）

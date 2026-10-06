@@ -652,18 +652,18 @@ GitHub Actions で CI パイプラインを構築し、PR 時の自動チェッ�
 | #55 | ノート画像からの登録 Skill と `create_feedback` | 完了 |
 | #57 | 新規種目登録時に効く部位を追加 | 完了 |
 | #60 | MCP の入力写真を R2 に保存し UI で表示 | 完了 |
-| #66 | 複数アカウント対応のログイン機構 | 検討中 |
+| #66 | 複数アカウント対応のログイン機構（Access + OAuth 2.1 + データ分離） | 実装済み。本番適用・実機 PoC は人手（[deployment.md](./deployment.md) 参照） |
 
 ## 将来検討
 
 以下は現時点では実装しない。必要性が明確になった時点で Issue を起票する。
 
-- **OAuth 2.1 化**: `workers-oauth-provider` を使用した OAuth 認証への移行
 - **MCP 2026-07-28 仕様追従**: MCP SDK のメジャーアップデートへの対応
 - **体重・食事・心拍数記録**: 筋トレ記録以外のヘルスデータの取り込み
 - **D1 バックアップの cron 自動化**: GitHub Actions の schedule トリガーによる定期エクスポート
 - **Web UI からの編集機能**: PATCH/DELETE API + CSRF 保護の追加（現状はセッション写真の追加・削除のみ Web UI から可能）
-- **複数ユーザー対応**: 個人利用に限定（ログイン機構は [#66](https://github.com/japan4415/training-logger/issues/66) で検討中）
+- **`user_id DEFAULT 1` の撤去**: 全 INSERT の `user_id` 明示指定が徹底された後（[database.md](./database.md) 参照）
+- **個人専用種目**: `exercises.owner_user_id`（NULL = 共有）の追加
 
 ## リスクと対策
 

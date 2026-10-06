@@ -2,8 +2,8 @@ import type { Context } from "hono";
 import { getSessionDetail } from "../db/queries.js";
 import { listExistingSessionPhotos } from "../db/session-photos.js";
 import { getSessionById } from "../db/sessions.js";
-import { DEFAULT_USER_ID } from "../default-user.js";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
+import { requireUserId } from "../security/auth.js";
 import { getSessionAnatomy, MuscleMap } from "./components/muscle-map.js";
 import { formatDateWithDay } from "./components/session-card.js";
 import { SessionPhotos } from "./components/session-photos.js";
@@ -32,7 +32,7 @@ interface AdjacentSession {
 }
 
 export async function sessionDetailHandler(
-	c: Context<{ Bindings: Bindings }>,
+	c: Context<AppEnv>,
 ): Promise<Response> {
 	const idParam = c.req.param("id") ?? "";
 	const id = Number.parseInt(idParam, 10);
@@ -45,8 +45,9 @@ export async function sessionDetailHandler(
 		);
 	}
 
+	const userId = requireUserId(c);
 	const db = c.env.DB;
-	const detail = await getSessionDetail(db, DEFAULT_USER_ID, id);
+	const detail = await getSessionDetail(db, userId, id);
 
 	if (!detail) {
 		return c.html(
@@ -62,19 +63,19 @@ export async function sessionDetailHandler(
 		.prepare(
 			"SELECT id, session_date FROM workout_sessions WHERE user_id = ? AND session_date < ? ORDER BY session_date DESC LIMIT 1",
 		)
-		.bind(DEFAULT_USER_ID, detail.session.session_date)
+		.bind(userId, detail.session.session_date)
 		.first<AdjacentSession>();
 
 	const nextSession = await db
 		.prepare(
 			"SELECT id, session_date FROM workout_sessions WHERE user_id = ? AND session_date > ? ORDER BY session_date ASC LIMIT 1",
 		)
-		.bind(DEFAULT_USER_ID, detail.session.session_date)
+		.bind(userId, detail.session.session_date)
 		.first<AdjacentSession>();
 
 	const { session, exercises } = detail;
 	const anatomy = getSessionAnatomy(exercises);
-	const photos = await listExistingSessionPhotos(c.env, DEFAULT_USER_ID, id);
+	const photos = await listExistingSessionPhotos(c.env, userId, id);
 
 	return c.html(
 		<Layout title="セッション詳細" activeNav="sessions">
@@ -189,7 +190,7 @@ export async function sessionDetailHandler(
 }
 
 export async function sessionPhotosHandler(
-	c: Context<{ Bindings: Bindings }>,
+	c: Context<AppEnv>,
 ): Promise<Response> {
 	const idParam = c.req.param("id") ?? "";
 	const id = Number.parseInt(idParam, 10);
@@ -202,7 +203,8 @@ export async function sessionPhotosHandler(
 		);
 	}
 
-	const session = await getSessionById(c.env.DB, DEFAULT_USER_ID, id);
+	const userId = requireUserId(c);
+	const session = await getSessionById(c.env.DB, userId, id);
 	if (!session) {
 		return c.html(
 			<Layout title="セッション写真" activeNav="sessions">
@@ -212,7 +214,7 @@ export async function sessionPhotosHandler(
 		);
 	}
 
-	const photos = await listExistingSessionPhotos(c.env, DEFAULT_USER_ID, id);
+	const photos = await listExistingSessionPhotos(c.env, userId, id);
 	if (c.req.header("HX-Request") === "true") {
 		return c.html(<SessionPhotos sessionId={id} photos={photos} />);
 	}

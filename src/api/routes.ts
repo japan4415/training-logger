@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
 import { getExercise, listExercises } from "./exercises.js";
 import { createPhoto, getPhoto, listPhotos, removePhoto } from "./photos.js";
 import { getSession, listSessions } from "./sessions.js";
@@ -15,7 +15,7 @@ import { getExerciseStatsHandler } from "./stats.js";
  *   GET /api/exercises/:id     - Exercise detail
  *   GET /api/exercises/:id/stats - Exercise statistics
  */
-export function registerApiRoutes(app: Hono<{ Bindings: Bindings }>): void {
+export function registerApiRoutes(app: Hono<AppEnv>): void {
 	// Sessions
 	app.get("/api/sessions", listSessions);
 	app.get("/api/sessions/:id", getSession);

@@ -4,15 +4,23 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { registerExercise } from "../../src/db/exercises.js";
 import { createSessionExercise, replaceSets } from "../../src/db/records.js";
 import { getOrCreateSession } from "../../src/db/sessions.js";
-import type { Bindings } from "../../src/env.js";
+import type { AppEnv } from "../../src/env.js";
+import { registerAccessAuth } from "../../src/security/auth.js";
 import { registerExerciseProgressRoutes } from "../../src/views/exercise-progress.js";
 import { registerExerciseListRoutes } from "../../src/views/exercises-list.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 
 // Create a fresh Hono app with the exercise view routes
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<AppEnv>();
+registerAccessAuth(app);
 registerExerciseListRoutes(app);
 registerExerciseProgressRoutes(app);
+
+/** ローカル開発フォールバックを有効にした bindings。 */
+const authEnv = {
+	DB: env.DB,
+	PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1",
+};
 
 /**
  * Seed test data for exercise view tests.
@@ -126,7 +134,7 @@ describe("exercise views", () => {
 
 	describe("GET /exercises", () => {
 		it("should return exercise list with all exercises", async () => {
-			const res = await app.request("/exercises", {}, { DB: env.DB });
+			const res = await app.request("/exercises", {}, authEnv);
 			expect(res.status).toBe(200);
 			const html = await res.text();
 			expect(html).toContain("ベンチプレス");
@@ -135,7 +143,7 @@ describe("exercise views", () => {
 		});
 
 		it("should include category labels", async () => {
-			const res = await app.request("/exercises", {}, { DB: env.DB });
+			const res = await app.request("/exercises", {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("筋力");
 			expect(html).toContain("有酸素");
@@ -143,14 +151,14 @@ describe("exercise views", () => {
 		});
 
 		it("should include equipment info", async () => {
-			const res = await app.request("/exercises", {}, { DB: env.DB });
+			const res = await app.request("/exercises", {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("バーベル");
 			expect(html).toContain("トレッドミル");
 		});
 
 		it("should include session count and last performed date", async () => {
-			const res = await app.request("/exercises", {}, { DB: env.DB });
+			const res = await app.request("/exercises", {}, authEnv);
 			const html = await res.text();
 			// ベンチプレス appears in 2 sessions
 			expect(html).toContain("回数: 2");
@@ -162,7 +170,7 @@ describe("exercise views", () => {
 			const res = await app.request(
 				"/exercises?category=strength",
 				{},
-				{ DB: env.DB },
+				authEnv,
 			);
 			const html = await res.text();
 			expect(html).toContain("ベンチプレス");
@@ -171,7 +179,7 @@ describe("exercise views", () => {
 		});
 
 		it("should return full HTML for normal request", async () => {
-			const res = await app.request("/exercises", {}, { DB: env.DB });
+			const res = await app.request("/exercises", {}, authEnv);
 			const html = await res.text();
 			// Should contain title (from Layout)
 			expect(html).toContain("種目一覧");
@@ -181,7 +189,7 @@ describe("exercise views", () => {
 			const res = await app.request(
 				"/exercises?category=cardio",
 				{ headers: { "HX-Request": "true" } },
-				{ DB: env.DB },
+				authEnv,
 			);
 			const html = await res.text();
 			// Should contain exercise data
@@ -192,13 +200,13 @@ describe("exercise views", () => {
 
 		it("should show empty message when no exercises in category", async () => {
 			await cleanDatabase(env.DB);
-			const res = await app.request("/exercises", {}, { DB: env.DB });
+			const res = await app.request("/exercises", {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("種目が登録されていません");
 		});
 
 		it("should link to exercise progress pages", async () => {
-			const res = await app.request("/exercises", {}, { DB: env.DB });
+			const res = await app.request("/exercises", {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain(`/exercises/${benchId}`);
 		});
@@ -210,11 +218,7 @@ describe("exercise views", () => {
 
 	describe("GET /exercises/:id", () => {
 		it("renders one anatomy card on the full page and none in period fragments", async () => {
-			const full = await app.request(
-				`/exercises/${benchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const full = await app.request(`/exercises/${benchId}`, {}, authEnv);
 			const html = await full.text();
 			expect(
 				html.match(/class="muscle-atlas target-muscles-summary"/g),
@@ -225,7 +229,7 @@ describe("exercise views", () => {
 			const partial = await app.request(
 				`/exercises/${benchId}?period=1m`,
 				{ headers: { "HX-Request": "true" } },
-				{ DB: env.DB },
+				authEnv,
 			);
 			const fragment = await partial.text();
 			expect(fragment).not.toContain("data-primary-ids");
@@ -233,11 +237,7 @@ describe("exercise views", () => {
 		});
 
 		it("shows an unconfigured exercise state and describes flexibility without strength load", async () => {
-			const res = await app.request(
-				`/exercises/${stretchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${stretchId}`, {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("ストレッチ・可動域の対象筋");
 			expect(html).toContain(
@@ -250,28 +250,24 @@ describe("exercise views", () => {
 			const unknown = await app.request(
 				`/exercises/${exercise.id}`,
 				{},
-				{ DB: env.DB },
+				authEnv,
 			);
 			const unknownHtml = await unknown.text();
 			expect(unknownHtml).toContain("対象筋肉がまだ設定されていません");
 			expect(unknownHtml).not.toContain('src="/js/muscle-atlas.js"');
 		});
 		it("should return 404 for non-existent exercise", async () => {
-			const res = await app.request("/exercises/9999", {}, { DB: env.DB });
+			const res = await app.request("/exercises/9999", {}, authEnv);
 			expect(res.status).toBe(404);
 		});
 
 		it("should return 400 for invalid ID", async () => {
-			const res = await app.request("/exercises/abc", {}, { DB: env.DB });
+			const res = await app.request("/exercises/abc", {}, authEnv);
 			expect(res.status).toBe(400);
 		});
 
 		it("should display exercise info for strength exercise", async () => {
-			const res = await app.request(
-				`/exercises/${benchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${benchId}`, {}, authEnv);
 			expect(res.status).toBe(200);
 			const html = await res.text();
 			expect(html).toContain("ベンチプレス");
@@ -280,21 +276,13 @@ describe("exercise views", () => {
 		});
 
 		it("should display aliases", async () => {
-			const res = await app.request(
-				`/exercises/${benchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${benchId}`, {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("Bench Press");
 		});
 
 		it("should embed weight chart data for strength exercise", async () => {
-			const res = await app.request(
-				`/exercises/${benchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${benchId}`, {}, authEnv);
 			const html = await res.text();
 
 			// Should contain the chart-data script tag with JSON
@@ -325,11 +313,7 @@ describe("exercise views", () => {
 		});
 
 		it("should embed speed chart data for cardio exercise", async () => {
-			const res = await app.request(
-				`/exercises/${walkingId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${walkingId}`, {}, authEnv);
 			const html = await res.text();
 
 			const match = html.match(
@@ -350,21 +334,13 @@ describe("exercise views", () => {
 		});
 
 		it("should show empty chart message for flexibility exercise", async () => {
-			const res = await app.request(
-				`/exercises/${stretchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${stretchId}`, {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("データがありません");
 		});
 
 		it("should display history table with set details", async () => {
-			const res = await app.request(
-				`/exercises/${benchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${benchId}`, {}, authEnv);
 			const html = await res.text();
 			// History should show session dates
 			expect(html).toContain("2026-08-16");
@@ -375,22 +351,14 @@ describe("exercise views", () => {
 		});
 
 		it("should include Chart.js CDN reference in full page", async () => {
-			const res = await app.request(
-				`/exercises/${benchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${benchId}`, {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("cdn.jsdelivr.net/npm/chart.js");
 			expect(html).toContain("/js/chart-init.js");
 		});
 
 		it("should include period filter buttons", async () => {
-			const res = await app.request(
-				`/exercises/${benchId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${benchId}`, {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("1M");
 			expect(html).toContain("3M");
@@ -402,7 +370,7 @@ describe("exercise views", () => {
 			const res = await app.request(
 				`/exercises/${benchId}?period=3m`,
 				{ headers: { "HX-Request": "true" } },
-				{ DB: env.DB },
+				authEnv,
 			);
 			expect(res.status).toBe(200);
 			const html = await res.text();
@@ -415,11 +383,7 @@ describe("exercise views", () => {
 		});
 
 		it("should display cardio history with speed info", async () => {
-			const res = await app.request(
-				`/exercises/${walkingId}`,
-				{},
-				{ DB: env.DB },
-			);
+			const res = await app.request(`/exercises/${walkingId}`, {}, authEnv);
 			const html = await res.text();
 			expect(html).toContain("2026-08-15");
 			expect(html).toContain("3.5~5km/h");
@@ -429,7 +393,7 @@ describe("exercise views", () => {
 			const res = await app.request(
 				`/exercises/${benchId}?period=all`,
 				{},
-				{ DB: env.DB },
+				authEnv,
 			);
 			expect(res.status).toBe(200);
 			const html = await res.text();

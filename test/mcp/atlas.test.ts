@@ -1,17 +1,38 @@
-import { env, SELF } from "cloudflare:test";
+import { env } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { registerExercise } from "../../src/db/exercises.js";
+import {
+	type McpApiContext,
+	mcpApiHandler,
+} from "../../src/oauth/api-handler.js";
+import { MCP_RESOURCE } from "../../src/oauth/config.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 
 async function rpc(method: string, params = {}) {
-	const response = await SELF.fetch("http://localhost/mcp", {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Accept: "application/json, text/event-stream",
+	const ctx = {
+		props: { userId: 1 },
+		auth: {
+			token: "test-token",
+			audience: MCP_RESOURCE,
+			scope: ["mcp:read", "mcp:write"],
+			userId: "1",
+			clientId: "test-client",
 		},
-		body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-	});
+		waitUntil() {},
+		passThroughOnException() {},
+	} as unknown as McpApiContext;
+	const response = await mcpApiHandler.fetch(
+		new Request("http://localhost/mcp", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Accept: "application/json, text/event-stream",
+			},
+			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+		}),
+		env,
+		ctx,
+	);
 	expect(response.status).toBe(200);
 	return response.json<{
 		result: {

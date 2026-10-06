@@ -1,6 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Bindings } from "../../env.js";
+import type { McpContext } from "../context.js";
+import { requireOwner, requireScope } from "./guard.js";
 
 // ---- Types ----
 
@@ -199,7 +201,11 @@ export async function createFeedbackHandler(
 
 // ---- MCP Tool Registration ----
 
-export function registerFeedbackTools(server: McpServer, env: Bindings): void {
+export function registerFeedbackTools(
+	server: McpServer,
+	env: Bindings,
+	ctx: McpContext,
+): void {
 	server.registerTool(
 		"create_feedback",
 		{
@@ -222,6 +228,8 @@ export function registerFeedbackTools(server: McpServer, env: Bindings): void {
 			},
 		},
 		async (args) => {
+			const denied = requireOwner(ctx) ?? requireScope(ctx, "create_feedback");
+			if (denied) return denied;
 			try {
 				const result = await createFeedbackHandler(env, args);
 				if (result.isError) {

@@ -7,6 +7,7 @@ import {
 } from "../../src/security/access-auth.js";
 
 const DOMAIN = "team.cloudflareaccess.com";
+const ISSUER = `https://${DOMAIN}`;
 const AUDIENCE = "test-audience";
 const SAME_ORIGIN = { "Sec-Fetch-Site": "same-origin" };
 let keys: CryptoKeyPair;
@@ -19,9 +20,14 @@ function base64Url(bytes: Uint8Array): string {
 		.replace(/\//g, "_");
 }
 
-async function jwt(payload: Record<string, unknown>): Promise<string> {
+async function jwt(
+	payload: Record<string, unknown>,
+	headerOverrides: Record<string, unknown> = {},
+): Promise<string> {
 	const header = base64Url(
-		new TextEncoder().encode(JSON.stringify({ alg: "RS256", kid: "key-1" })),
+		new TextEncoder().encode(
+			JSON.stringify({ alg: "RS256", kid: "key-1", ...headerOverrides }),
+		),
 	);
 	const body = base64Url(new TextEncoder().encode(JSON.stringify(payload)));
 	const signature = await crypto.subtle.sign(
@@ -88,6 +94,7 @@ describe("Cloudflare Access authentication", () => {
 		const token = await jwt({
 			sub: "user-id",
 			aud: AUDIENCE,
+			iss: ISSUER,
 			exp: Math.floor(Date.now() / 1000) + 60,
 		});
 		const response = await appFor(fetchFn).request(
@@ -110,6 +117,7 @@ describe("Cloudflare Access authentication", () => {
 		const token = await jwt({
 			sub: "user-id",
 			aud: AUDIENCE,
+			iss: ISSUER,
 			exp: Math.floor(Date.now() / 1000) + 60,
 		});
 		const response = await appFor(fetchFn).request(
@@ -126,6 +134,7 @@ describe("Cloudflare Access authentication", () => {
 		const token = await jwt({
 			sub: "user-id",
 			aud: AUDIENCE,
+			iss: ISSUER,
 			exp: Math.floor(Date.now() / 1000) + 60,
 		});
 		const app = appFor(fetchFn);
@@ -141,10 +150,17 @@ describe("Cloudflare Access authentication", () => {
 	});
 
 	it.each([
-		["expired", { aud: AUDIENCE, exp: Math.floor(Date.now() / 1000) - 1 }],
+		[
+			"expired",
+			{ aud: AUDIENCE, iss: ISSUER, exp: Math.floor(Date.now() / 1000) - 1 },
+		],
 		[
 			"audience mismatch",
-			{ aud: "different", exp: Math.floor(Date.now() / 1000) + 60 },
+			{
+				aud: "different",
+				iss: ISSUER,
+				exp: Math.floor(Date.now() / 1000) + 60,
+			},
 		],
 	] as const)("rejects %s JWT", async (_name, payload) => {
 		const response = await appFor(jwksFetch()).request(
@@ -164,6 +180,7 @@ describe("Cloudflare Access authentication", () => {
 	it("rejects an invalid signature", async () => {
 		const valid = await jwt({
 			aud: AUDIENCE,
+			iss: ISSUER,
 			exp: Math.floor(Date.now() / 1000) + 60,
 		});
 		const parts = valid.split(".");
@@ -180,6 +197,158 @@ describe("Cloudflare Access authentication", () => {
 			bindings(),
 		);
 		expect(response.status).toBe(401);
+	});
+
+	it.each([
+		["none", { alg: "none" }],
+		["HS256", { alg: "HS256" }],
+	] as const)(
+		"rejects a JWT whose header alg is %s without fetching JWKS",
+		async (_name, header) => {
+			const fetchFn = jwksFetch();
+			const token = await jwt(
+				{
+					sub: "user-id",
+					aud: AUDIENCE,
+					iss: ISSUER,
+					exp: Math.floor(Date.now() / 1000) + 60,
+				},
+				header,
+			);
+			const response = await appFor(fetchFn).request(
+				"/write",
+				{
+					method: "POST",
+					headers: {
+						...SAME_ORIGIN,
+						"Cf-Access-Jwt-Assertion": token,
+					},
+				},
+				bindings(),
+			);
+			expect(response.status).toBe(401);
+			expect(fetchFn).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		["a mismatched issuer", { iss: "https://evil.cloudflareaccess.com" }],
+		["a missing issuer", {}],
+	] as const)(
+		"rejects a JWT with %s without fetching JWKS",
+		async (_name, overrides) => {
+			const fetchFn = jwksFetch();
+			const token = await jwt({
+				sub: "user-id",
+				aud: AUDIENCE,
+				exp: Math.floor(Date.now() / 1000) + 60,
+				...overrides,
+			});
+			const response = await appFor(fetchFn).request(
+				"/write",
+				{
+					method: "POST",
+					headers: {
+						...SAME_ORIGIN,
+						"Cf-Access-Jwt-Assertion": token,
+					},
+				},
+				bindings(),
+			);
+			expect(response.status).toBe(401);
+			expect(fetchFn).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rejects a JWT that is not yet valid (future nbf)", async () => {
+		const fetchFn = jwksFetch();
+		const token = await jwt({
+			sub: "user-id",
+			aud: AUDIENCE,
+			iss: ISSUER,
+			nbf: Math.floor(Date.now() / 1000) + 3600,
+			exp: Math.floor(Date.now() / 1000) + 7200,
+		});
+		const response = await appFor(fetchFn).request(
+			"/write",
+			{
+				method: "POST",
+				headers: { ...SAME_ORIGIN, "Cf-Access-Jwt-Assertion": token },
+			},
+			bindings(),
+		);
+		expect(response.status).toBe(401);
+		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
+	it("does not refetch JWKS for an unknown kid within the refetch interval", async () => {
+		const fetchFn = jwksFetch();
+		const token = await jwt(
+			{
+				sub: "user-id",
+				aud: AUDIENCE,
+				iss: ISSUER,
+				exp: Math.floor(Date.now() / 1000) + 60,
+			},
+			{ kid: "rotated-key" },
+		);
+		const app = appFor(fetchFn);
+		for (let index = 0; index < 3; index++) {
+			const response = await app.request(
+				"/read",
+				{ headers: { "Cf-Access-Jwt-Assertion": token } },
+				bindings(),
+			);
+			expect(response.status).toBe(401);
+		}
+		expect(fetchFn).toHaveBeenCalledOnce();
+	});
+
+	it("refetches JWKS after the refetch interval to pick up a rotated key", async () => {
+		const baseTime = Date.parse("2026-01-01T00:00:00Z");
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(baseTime);
+		try {
+			let calls = 0;
+			const fetchFn = (async () => {
+				calls += 1;
+				const kid = calls === 1 ? "key-1" : "key-2";
+				return new Response(
+					JSON.stringify({
+						keys: [{ ...publicJwk, kid, alg: "RS256" }],
+					}),
+					{ status: 200 },
+				);
+			}) as unknown as typeof fetch;
+			const token = await jwt(
+				{
+					sub: "user-id",
+					aud: AUDIENCE,
+					iss: ISSUER,
+					exp: Math.floor(baseTime / 1000) + 3600,
+				},
+				{ kid: "key-2" },
+			);
+			const app = appFor(fetchFn);
+
+			const before = await app.request(
+				"/read",
+				{ headers: { "Cf-Access-Jwt-Assertion": token } },
+				bindings(),
+			);
+			expect(before.status).toBe(401);
+			expect(calls).toBe(1);
+
+			nowSpy.mockReturnValue(baseTime + 31_000);
+			const after = await app.request(
+				"/read",
+				{ headers: { "Cf-Access-Jwt-Assertion": token } },
+				bindings(),
+			);
+			expect(after.status).toBe(200);
+			expect(calls).toBe(2);
+		} finally {
+			nowSpy.mockRestore();
+		}
 	});
 
 	it("rejects a request without a JWT header or cookie", async () => {

@@ -12,6 +12,17 @@ export interface ExerciseWithAliases {
 }
 
 /**
+ * 部分一致用の LIKE パターンを作る。ユーザー入力の `%` / `_` / `\` をエスケープし、
+ * ワイルドカードとして解釈させない（`ESCAPE '\'` と併用する）。種目名の解決は
+ * 共有マスタを横断するため、ワイルドカードで他ユーザーの解決結果を広げられない
+ * ようにする。
+ */
+function likePattern(value: string): string {
+	const escaped = value.replace(/[\\%_]/g, (character) => `\\${character}`);
+	return `%${escaped}%`;
+}
+
+/**
  * 3-stage exercise search:
  * 1. Exact match on exercises.name (COLLATE NOCASE)
  * 2. Exact match on exercise_aliases.alias (COLLATE NOCASE)
@@ -67,15 +78,15 @@ export async function searchExercises(
 
 	// Stage 3: partial match (LIKE) on both name and alias
 	{
-		const pattern = `%${query}%`;
+		const pattern = likePattern(query);
 		const sql = category
 			? `SELECT DISTINCT e.* FROM exercises e
 			   LEFT JOIN exercise_aliases ea ON e.id = ea.exercise_id
-			   WHERE (e.name LIKE ? OR ea.alias LIKE ?) AND e.category = ?
+			   WHERE (e.name LIKE ? ESCAPE '\\' OR ea.alias LIKE ? ESCAPE '\\') AND e.category = ?
 			   ORDER BY e.name`
 			: `SELECT DISTINCT e.* FROM exercises e
 			   LEFT JOIN exercise_aliases ea ON e.id = ea.exercise_id
-			   WHERE (e.name LIKE ? OR ea.alias LIKE ?)
+			   WHERE (e.name LIKE ? ESCAPE '\\' OR ea.alias LIKE ? ESCAPE '\\')
 			   ORDER BY e.name`;
 		const { results } = category
 			? await db
@@ -114,12 +125,12 @@ export async function findExerciseByName(
 	if (aliasMatch) return aliasMatch;
 
 	// Stage 3: partial match on both name and alias
-	const pattern = `%${name}%`;
+	const pattern = likePattern(name);
 	return db
 		.prepare(
 			`SELECT DISTINCT e.* FROM exercises e
 			 LEFT JOIN exercise_aliases ea ON e.id = ea.exercise_id
-			 WHERE e.name LIKE ? OR ea.alias LIKE ?
+			 WHERE e.name LIKE ? ESCAPE '\\' OR ea.alias LIKE ? ESCAPE '\\'
 			 ORDER BY e.name
 			 LIMIT 1`,
 		)

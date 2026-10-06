@@ -9,14 +9,10 @@ import {
 } from "../db/session-photos.js";
 import { getSessionById } from "../db/sessions.js";
 import type { SessionPhotoRow } from "../db/types.js";
-import { DEFAULT_USER_ID } from "../default-user.js";
-import type { Bindings } from "../env.js";
-import {
-	requireAccessUser,
-	requireAccessUserForRead,
-} from "../security/access-auth.js";
+import type { AppEnv } from "../env.js";
+import { requireUserId } from "../security/auth.js";
 
-type AppContext = Context<{ Bindings: Bindings }>;
+type AppContext = Context<AppEnv>;
 const MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024;
 
 function sessionId(c: AppContext): number | null {
@@ -35,32 +31,31 @@ function photoJson(photo: SessionPhotoRow) {
 }
 
 export async function listPhotos(c: AppContext) {
-	const auth = await requireAccessUserForRead(c);
-	if (!auth.ok) return auth.response;
+	// 認証・CSRF は registerAccessAuth のミドルウェアで共通化している。
+	const userId = requireUserId(c);
 	const id = sessionId(c);
 	if (!id) return c.json({ error: "Invalid session ID" }, 400);
-	if (!(await getSessionById(c.env.DB, DEFAULT_USER_ID, id))) {
+	if (!(await getSessionById(c.env.DB, userId, id))) {
 		return c.json({ error: "Session not found" }, 404);
 	}
-	const photos = await listExistingSessionPhotos(c.env, DEFAULT_USER_ID, id);
+	const photos = await listExistingSessionPhotos(c.env, userId, id);
 	return c.json({ photos: photos.map(photoJson) });
 }
 
 export async function getPhoto(c: AppContext) {
-	const auth = await requireAccessUserForRead(c);
-	if (!auth.ok) return auth.response;
+	const userId = requireUserId(c);
 	const id = sessionId(c);
 	if (!id) return c.json({ error: "Invalid session ID" }, 400);
 	const photo = await getSessionPhoto(
 		c.env.DB,
-		DEFAULT_USER_ID,
+		userId,
 		id,
 		c.req.param("photoId") ?? "",
 	);
 	if (!photo) return c.json({ error: "Photo not found" }, 404);
 	const object = await c.env.PHOTOS.get(photo.r2_key);
 	if (!object) {
-		await removeMissingSessionPhotoMetadata(c.env.DB, DEFAULT_USER_ID, photo);
+		await removeMissingSessionPhotoMetadata(c.env.DB, userId, photo);
 		return c.json({ error: "Photo not found" }, 404);
 	}
 	return new Response(object.body, {
@@ -76,11 +71,10 @@ export async function getPhoto(c: AppContext) {
 }
 
 export async function createPhoto(c: AppContext) {
-	const auth = await requireAccessUser(c);
-	if (!auth.ok) return auth.response;
+	const userId = requireUserId(c);
 	const id = sessionId(c);
 	if (!id) return c.json({ error: "invalid_request" }, 400);
-	const session = await getSessionById(c.env.DB, DEFAULT_USER_ID, id);
+	const session = await getSessionById(c.env.DB, userId, id);
 	if (!session) return c.json({ error: "Session not found" }, 404);
 	const contentLengthHeader = c.req.header("Content-Length");
 	if (contentLengthHeader === undefined) {
@@ -109,7 +103,7 @@ export async function createPhoto(c: AppContext) {
 	}
 	const result = await storeSessionPhoto(
 		c.env,
-		DEFAULT_USER_ID,
+		userId,
 		session,
 		new Uint8Array(await file.arrayBuffer()),
 	);
@@ -130,13 +124,12 @@ export async function createPhoto(c: AppContext) {
 }
 
 export async function removePhoto(c: AppContext) {
-	const auth = await requireAccessUser(c);
-	if (!auth.ok) return auth.response;
+	const userId = requireUserId(c);
 	const id = sessionId(c);
 	if (!id) return c.json({ error: "Invalid session ID" }, 400);
 	const deleted = await deleteSessionPhoto(
 		c.env,
-		DEFAULT_USER_ID,
+		userId,
 		id,
 		c.req.param("photoId") ?? "",
 	);

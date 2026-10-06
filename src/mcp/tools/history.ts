@@ -2,6 +2,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getHistory, type SessionDetail } from "../../db/queries.js";
 import type { Bindings } from "../../env.js";
+import type { McpContext } from "../context.js";
+import { requireScope } from "./guard.js";
 
 /** Parameters for the get_history MCP tool */
 export interface GetHistoryParams {
@@ -115,7 +117,7 @@ export async function getHistoryHandler(
 export function registerHistoryTools(
 	server: McpServer,
 	env: Bindings,
-	userId: number,
+	ctx: McpContext,
 ): void {
 	server.registerTool(
 		"get_history",
@@ -151,7 +153,9 @@ export function registerHistoryTools(
 			},
 		},
 		async (args) => {
-			const result = await getHistoryHandler(env, userId, {
+			const denied = requireScope(ctx, "get_history");
+			if (denied) return denied;
+			const result = await getHistoryHandler(env, ctx.userId, {
 				exerciseName: args.exercise_name,
 				dateFrom: args.date_from,
 				dateTo: args.date_to,

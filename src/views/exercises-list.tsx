@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import type { FC } from "hono/jsx";
-import { DEFAULT_USER_ID } from "../default-user.js";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
+import { requireUserId } from "../security/auth.js";
 import { Layout } from "./layout.js";
 
 // ---------------------------------------------------------------------------
@@ -167,14 +167,12 @@ const ExercisesPageContent: FC<{
 // Route registration
 // ---------------------------------------------------------------------------
 
-export function registerExerciseListRoutes(
-	app: Hono<{ Bindings: Bindings }>,
-): void {
+export function registerExerciseListRoutes(app: Hono<AppEnv>): void {
 	app.get("/exercises", async (c) => {
 		const category = parseCategory(c.req.query("category"));
 		const exercises = await fetchExerciseList(
 			c.env.DB,
-			DEFAULT_USER_ID,
+			requireUserId(c),
 			category,
 		);
 		const isHtmx = c.req.header("HX-Request") === "true";

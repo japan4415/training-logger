@@ -2,12 +2,17 @@ import { env } from "cloudflare:test";
 import { Hono } from "hono";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import atlas from "../../public/models/human-atlas/atlas.json";
-import type { Bindings } from "../../src/env.js";
+import type { AppEnv } from "../../src/env.js";
+import { registerAccessAuth } from "../../src/security/auth.js";
 import { registerSessionViews } from "../../src/views/sessions-list.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<AppEnv>();
+registerAccessAuth(app);
 registerSessionViews(app);
+
+/** ローカル開発フォールバックを有効にした bindings。 */
+const authEnv = { ...env, PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1" };
 
 /** Helper to make requests against the test app */
 async function request(
@@ -17,7 +22,7 @@ async function request(
 	const req = new Request(`http://localhost${path}`, {
 		headers: options?.headers,
 	});
-	return app.fetch(req, env);
+	return app.fetch(req, authEnv);
 }
 
 function idsForPatterns(patterns: string[]): string[] {

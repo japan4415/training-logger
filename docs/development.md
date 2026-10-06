@@ -18,10 +18,17 @@ pnpm exec wrangler d1 migrations apply training-logger-db --local
 pnpm run dev
 ```
 
-`pnpm run dev` は `wrangler dev` を実行し、ローカル D1 を使った開発サーバを起動する。既定では http://localhost:8787 で待ち受ける。`create_feedback`（`GITHUB_TOKEN`）や写真 API をローカルで検証する場合は、任意で `cp .dev.vars.example .dev.vars` を用意する（起動自体には不要）。コピー後は次の編集が必要:
+`pnpm run dev` は `wrangler dev` を実行し、ローカル D1 / R2 / KV を使った開発サーバを起動する。既定では http://localhost:8787 で待ち受ける。Web UI / REST API / `/authorize` は deny-by-default で認証必須のため、ローカル開発では `.dev.vars` を用意し `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を有効にする（未設定だと 401 `access_not_configured`）。`/mcp` は OAuth のためこのフラグでは緩和されず、access token が無ければ 401 になる。
 
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+コピー後に必要な編集:
+
+- `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` のコメントを外す（Host が `localhost` / `127.0.0.1` のときだけ有効。リクエストは既定ユーザー `user 1` として扱われる）
 - `create_feedback` を試す場合、`GITHUB_TOKEN=github_pat_xxx` のプレースホルダ行は truthy のためそのままでは GitHub API が 401 になる。実際の fine-grained PAT（`Issues: Read and write`）に置き換えると `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` の先へ実際に起票される（既定は本番リポジトリ。試さない場合は行を削除すると手動起票 URL の案内にフォールバックする）
-- 写真 API を試す場合は `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` のコメントを外す（localhost / 127.0.0.1 のときだけ有効）
+- `OAUTH_CONSENT_SECRET` は同意画面の CSRF 鍵。ローカル開発フォールバック（`PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` + `ACCESS_*` 未設定）では固定のダミー鍵が使われるため設定は不要
 
 マイグレーションは dev 起動前に適用する（先に dev を起動すると空の DB になる）。
 
@@ -132,12 +139,13 @@ Issue の記述は、**別セッションの Claude Code（別モデル）が Is
 
 | テスト対象 | 種別 | 内容 |
 |------------|------|------|
-| `src/db/` | ユニットテスト | CRUD 操作の検証。実 D1 バインディングを使用 |
+| `src/db/` | ユニットテスト | CRUD 操作の検証。実 D1 バインディングを使用。ユーザー分離（他ユーザーの行は取得・更新できない）も検証 |
 | `src/domain/` | ユニットテスト | Atlas 筋肉割当の検証・集約 |
-| `src/security/` | ユニットテスト | Access JWT の検証 |
-| `src/mcp/` | 統合テスト | MCP ハンドラ・ツール呼び出しの E2E。バリデーション・正常系・異常系 |
+| `src/security/` | ユニットテスト | Access JWT の検証（RS256 / `iss` / `aud` / `exp` / `nbf`）と deny-by-default ミドルウェア・公開パス判定 |
+| `src/oauth/` | 統合テスト | OAuthProvider の metadata / 401 challenge / DCR、同意画面（CSRF・redirect 検証）、scope 検査、token 交換 |
+| `src/mcp/` | 統合テスト | MCP ツール呼び出し。バリデーション・正常系・異常系・scope / role ガード |
 | `src/api/` | 統合テスト | REST API のリクエスト/レスポンス検証 |
-| `src/views/` | 統合テスト | SSR ビューのレンダリング・htmx 部分更新の検証 |
+| `src/views/` | 統合テスト | SSR ビューのレンダリング・htmx 部分更新・ユーザー分離の検証 |
 
 ### テストフィクスチャ
 

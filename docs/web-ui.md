@@ -182,9 +182,19 @@
 └──────────────────────────────────┘
 ```
 
+### 5. OAuth 同意画面 `/authorize`
+
+MCP コネクタの認可時にブラウザで開くページ（`src/views/consent.tsx`）。読み取り専用ビューアの 4 画面とは別に、OAuth 2.1 の同意 UI として提供する。`/authorize` 自体は Cloudflare Access JWT 必須で、未ログインなら先に Access がログインさせる。
+
+- クライアント名・`client_id`（CIMD URL）・`redirect_uri` のホスト・要求 scope を表示し、未知クライアントを自動承認しない
+- 「自分で開始した接続だけを許可する」旨の警告と、ログイン中の Access アカウントを表示する
+- scope は日本語ラベルを主・生トークンを補助に表示し、`mcp:read` は必須（常時付与・チェック不可）
+- 承認は POST。consent handle と Access `sub` に束縛した CSRF トークン、`Sec-Fetch-Site` 検査で守り、応答に `Content-Security-Policy: frame-ancestors 'none'` を付ける
+- 未登録・無効ユーザー、無効なリクエスト、CSRF 失敗、`OAUTH_CONSENT_SECRET` 未設定（503）は日本語の HTML エラーページで表示する
+
 ## REST API エンドポイント
 
-Web UI が使用する REST API の一覧。ワークアウトデータは読み取り専用で、写真だけ追加・削除できる。
+Web UI が使用する REST API の一覧。いずれも Cloudflare Access 認証必須で、認証ミドルウェアが解決したユーザーのデータだけを返す。ワークアウトデータは読み取り専用で、写真だけ追加・削除できる。
 
 | パス | メソッド | 説明 | クエリパラメータ | レスポンス概形 |
 |------|----------|------|------------------|----------------|
@@ -268,7 +278,9 @@ htmx のリクエストには `HX-Request` ヘッダーが付与される。サ�
 
 エラーは `unsupported_type`、`too_large`、`limit_exceeded`、401（Access 未認証または未設定）をユーザー向けの文言に変換して表示する。逐次アップロードの途中で失敗した場合も、1 件以上成功済みなら断片を再取得し、「N件成功、M件目（ファイル名）失敗」を `aria-live` に表示して入力をクリアする。4 枚到達時はアップロードフォームを表示せず、削除が必要な恒久案内と一時的な live status を別要素で表示する。断片更新後は、アップロード時は入力（上限到達時は写真 details の summary）、削除時は次の削除ボタンまたは summary へフォーカスを移す。削除確認はラベル付き `fieldset` とし、確定後は確認・キャンセルの両ボタンを無効化して「削除中…」を表示する。写真セクションの変更操作は直列化し、アップロード中は全削除操作、削除中はアップロードと他の削除操作を無効化する。操作はキーボードだけでも実行でき、進捗表示の動きは `prefers-reduced-motion` を尊重する。
 
-写真 API の GET / POST / DELETE は Access JWT 検証を通す。POST / DELETE だけは加えて `Sec-Fetch-Site` を検査し、`same-origin` / `none` 以外、またはヘッダー自体がないリクエストを 403 `csrf_forbidden` とする。Access JWT がない・無効なら 401、Access 環境変数が未設定なら読み書きとも fail-closed で 401 `access_not_configured` とする。JWT は `Cf-Access-Jwt-Assertion` ヘッダー、なければ `CF_Authorization` cookie から取得し、Access JWKS による RS256 署名、`aud`、`exp` を検証する。ローカル開発では request Host が `localhost` / `127.0.0.1` の場合だけ `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` で認証を省略できる。
+Web UI / REST の全経路は `registerAccessAuth` の deny-by-default 認証ミドルウェアで保護する。GET / HEAD / OPTIONS 以外（写真の POST / DELETE を含む）は加えて `Sec-Fetch-Site` を検査し、`same-origin` / `none` 以外、またはヘッダー自体がないリクエストを 403 `csrf_forbidden` とする。Access JWT がない・無効なら 401、Access 環境変数が未設定なら（開発フォールバックを除き）読み書きとも fail-closed で 401 `access_not_configured` とする。JWT は `Cf-Access-Jwt-Assertion` ヘッダー、なければ `CF_Authorization` cookie から取得し、Access JWKS による RS256 署名、`iss`、`aud`、`exp`、`nbf` を検証したうえで、`sub` を内部 `users.id` に解決する。未登録・無効ユーザーは 403 で拒否する。ローカル開発では request Host が `localhost` / `127.0.0.1` の場合だけ `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` で認証を省略できる（既定ユーザー `user 1` として扱う）。
+
+各ハンドラ・ビューは認証ミドルウェアが解決した `userId` を使って `src/db/` を呼び、他ユーザーのセッション・写真・集計は 404（存在を漏らさない）として扱う。認証・分離の詳細は [architecture.md](./architecture.md) の「認証と認可」を参照。
 
 ### Chart.js 初期化
 
