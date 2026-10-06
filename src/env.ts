@@ -23,7 +23,12 @@ export type Bindings = {
 	 * 未設定なら既定の許可リストを使う。
 	 */
 	OAUTH_ALLOWED_REDIRECT_HOSTS?: string;
-	/** 同意画面の CSRF トークンに使う HMAC 鍵（任意。未設定なら Access の設定値から導出する）。 */
+	/**
+	 * 同意画面の CSRF トークンに使う HMAC 鍵。
+	 * 必須で、未設定のときは同意フロー（GET / POST /authorize）を 503 で fail-closed にする。
+	 * 例外は localhost + `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` + `ACCESS_*` 未設定の
+	 * 開発フォールバックだけで、その場合のみ固定のダミー鍵を使う。
+	 */
 	OAUTH_CONSENT_SECRET?: string;
 	ACCESS_TEAM_DOMAIN?: string;
 	ACCESS_AUD?: string;
@@ -42,10 +47,14 @@ export type Bindings = {
  *
  * `accessSubject` は検証済み Access JWT の `sub`。OAuth 同意画面の CSRF トークンを
  * ユーザーに束縛するためにだけ使い、DB 層へは渡さない。
+ *
+ * `accessEmail` は検証済み Access JWT の `email`（無い場合もある）。同意画面で
+ * 「どのアカウントで許可するか」を表示するためだけに使う。
  */
 export type Variables = {
 	userId: number;
 	accessSubject?: string;
+	accessEmail?: string;
 };
 
 /** Web / REST アプリ共通の Hono 環境。 */

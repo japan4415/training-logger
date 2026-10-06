@@ -21,6 +21,13 @@ export const AUTHORIZE_ENDPOINT = "/authorize";
 export const TOKEN_ENDPOINT = "/oauth/token";
 
 /**
+ * 動的クライアント登録（RFC 7591）のエンドポイント（パス）。
+ * `OAUTH_DCR_ENABLED=1` のときだけ `OAuthProvider` の
+ * `clientRegistrationEndpoint` に設定し、AS metadata で広告する。
+ */
+export const DCR_ENDPOINT = "/oauth/register";
+
+/**
  * 認可サーバーが発行し得るスコープの全体（AS metadata の `scopes_supported`）。
  * `offline_access` は AS metadata にだけ載せ、PRM と `WWW-Authenticate` の
  * `scope` には載せない（MCP 仕様の SHOULD NOT）。

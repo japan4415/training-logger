@@ -21,7 +21,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { getUserAccess } from "../db/users.js";
 import type { Bindings } from "../env.js";
 import type { McpContext } from "../mcp/context.js";
-import { requiredScopeForBody } from "../mcp/scopes.js";
+import { requiredScopesForBody } from "../mcp/scopes.js";
 import { createMcpServer } from "../mcp/server.js";
 import { MCP_RESOURCE, RESOURCE_REQUIRED_SCOPES } from "./config.js";
 
@@ -59,28 +59,38 @@ function readUserId(props: unknown): number | null {
 	return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
-/** scope 不足の 403 応答を組み立てる。token 情報が無くても challenge を返せるようにする。 */
+/**
+ * scope 不足の 403 応答を組み立てる。token 情報が無くても challenge を返せるようにする。
+ *
+ * challenge の `scope` は「いま持っている scope（`offline_access` を除く）」と
+ * 「今回不足している scope」の和集合にする。MCP クライアントは challenge の
+ * `scope` を正として再認可し、`completeAuthorization` は既定で同一クライアントの
+ * 既存 grant を置き換えるため、不足分だけを載せると既存 scope が交互に失われる。
+ * `offline_access` は WWW-Authenticate に載せない（MCP 仕様の SHOULD NOT）。
+ */
 function scopeChallenge(
 	auth: OAuthResourceAuth | undefined,
-	scope: readonly string[],
+	granted: readonly string[],
 	required: readonly string[],
 ): Response {
+	const present = granted.filter((scope) => scope !== "offline_access");
+	const challenge = [...new Set([...present, ...required])];
 	return insufficientScope(
-		auth ?? { token: "", audience: MCP_RESOURCE, scope: [...scope] },
-		[...required],
+		auth ?? { token: "", audience: MCP_RESOURCE, scope: [...granted] },
+		challenge,
 	);
 }
 
 /**
- * リクエストボディの `tools/call` から必要 scope を読み取る。
+ * リクエストボディの `tools/call` から必要 scope を読み取る（バッチは全件）。
  * ボディは clone して読むため、transport には元のリクエストを渡す。
  */
-async function readToolScope(request: Request): Promise<string | null> {
-	if (request.method !== "POST") return null;
+async function readToolScopes(request: Request): Promise<string[]> {
+	if (request.method !== "POST") return [];
 	try {
-		return requiredScopeForBody(await request.clone().json());
+		return requiredScopesForBody(await request.clone().json());
 	} catch {
-		return null;
+		return [];
 	}
 }
 
@@ -132,15 +142,19 @@ export const mcpApiHandler = {
 		}
 
 		const scope = ctx.auth?.scope ?? [];
+		const missing = new Set<string>();
 		if (!hasBaselineScope(scope)) {
-			return scopeChallenge(ctx.auth, scope, RESOURCE_REQUIRED_SCOPES);
+			for (const required of RESOURCE_REQUIRED_SCOPES) missing.add(required);
 		}
-
 		// ツール単位の scope。不足時は step-up を促す 403 を返し、ツール層へ
-		// 到達させない（ツール層にも同じ表で二重のガードがある）。
-		const requiredScope = await readToolScope(request);
-		if (requiredScope && !scope.includes(requiredScope)) {
-			return scopeChallenge(ctx.auth, scope, [requiredScope]);
+		// 到達させない（ツール層にも同じ表で二重のガードがある）。バッチは全件を
+		// まとめて 1 つの challenge に載せる（クライアントは challenge を完全な
+		// 要求リストとして扱うため）。
+		for (const required of await readToolScopes(request)) {
+			if (!scope.includes(required)) missing.add(required);
+		}
+		if (missing.size > 0) {
+			return scopeChallenge(ctx.auth, scope, [...missing]);
 		}
 
 		const access = await getUserAccess(env.DB, userId);

@@ -1,5 +1,8 @@
 import { env } from "cloudflare:test";
-import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import {
+	AuthorizationError,
+	type OAuthHelpers,
+} from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACCESS_IDENTITY_PROVIDER } from "../../src/db/users.js";
@@ -37,7 +40,7 @@ function base64Url(bytes: Uint8Array): string {
 		.replace(/\//g, "_");
 }
 
-async function validJwt(sub: string): Promise<string> {
+async function validJwt(sub: string, email?: string): Promise<string> {
 	const header = base64Url(
 		new TextEncoder().encode(JSON.stringify({ alg: "RS256", kid: "key-1" })),
 	);
@@ -48,6 +51,7 @@ async function validJwt(sub: string): Promise<string> {
 				aud: AUDIENCE,
 				iss: ISSUER,
 				exp: Math.floor(Date.now() / 1000) + 60,
+				...(email ? { email } : {}),
 			}),
 		),
 	);
@@ -213,7 +217,33 @@ describe("/authorize consent flow", () => {
 			expect(html).toContain('value="handle-1"');
 			expect(html).toContain('name="csrf"');
 			expect(html).toContain("chatgpt.com");
+			// 生トークンだけでなく人が読める説明と、外せない必須 scope を表示する。
 			expect(html).toContain("mcp:read");
+			expect(html).toContain("記録の閲覧");
+			expect(html).toContain("（必須）");
+		});
+
+		it("shows which account is asked to approve", async () => {
+			const response = await getAuthorize(
+				appWith(fakeOAuth()),
+				{},
+				await validJwt("subject-7", "owner@example.com"),
+			);
+			expect(response.status).toBe(200);
+			expect(await response.text()).toContain("ログイン中: owner@example.com");
+		});
+
+		it("renders an HTML error page for an unregistered account instead of JSON", async () => {
+			const response = await getAuthorize(
+				appWith(fakeOAuth()),
+				{},
+				await validJwt("nobody"),
+			);
+			expect(response.status).toBe(403);
+			expect(response.headers.get("Content-Type")).toContain("text/html");
+			const html = await response.text();
+			expect(html).toContain("認可できませんでした");
+			expect(html).toContain("登録されていません");
 		});
 
 		it("rejects a redirect host outside the allowlist", async () => {
@@ -229,6 +259,46 @@ describe("/authorize consent flow", () => {
 			);
 			expect(response.status).toBe(400);
 			expect(await response.text()).toContain("許可されていません");
+		});
+
+		it("does not redirect to an allowlist-external host on a parse error", async () => {
+			const oauth = fakeOAuth();
+			vi.mocked(oauth.parseAuthRequest).mockRejectedValue(
+				new AuthorizationError("invalid_request", {
+					description: "invalid code_challenge_method",
+					redirectUri: "https://evil.example/cb",
+					state: "state-1",
+					issuer: OAUTH_ISSUER,
+				}),
+			);
+			const response = await getAuthorize(
+				appWith(oauth),
+				{},
+				await validJwt("subject-7"),
+			);
+			expect(response.status).toBe(400);
+			expect(response.headers.get("Location")).toBeNull();
+		});
+
+		it("redirects a parse error only to an allowlisted host", async () => {
+			const oauth = fakeOAuth();
+			vi.mocked(oauth.parseAuthRequest).mockRejectedValue(
+				new AuthorizationError("invalid_request", {
+					description: "invalid code_challenge_method",
+					redirectUri: AUTH_REQUEST.redirectUri,
+					state: "state-1",
+					issuer: OAUTH_ISSUER,
+				}),
+			);
+			const response = await getAuthorize(
+				appWith(oauth),
+				{},
+				await validJwt("subject-7"),
+			);
+			expect(response.status).toBe(302);
+			expect(response.headers.get("Location")).toContain(
+				"chatgpt.com/callback",
+			);
 		});
 
 		it("fails closed on a production host without OAUTH_CONSENT_SECRET", async () => {
@@ -293,6 +363,23 @@ describe("/authorize consent flow", () => {
 				);
 				expect(response.status).toBe(403);
 			}
+		});
+
+		it("rejects an approval with no scopes", async () => {
+			const oauth = fakeOAuth();
+			const csrf = await createConsentCsrfToken(
+				"subject-7",
+				"handle-1",
+				CONSENT_SECRET,
+			);
+			const response = await postAuthorize(
+				appWith(oauth),
+				{},
+				{ handle: "handle-1", csrf, decision: "approve" },
+				await validJwt("subject-7"),
+			);
+			expect(response.status).toBe(400);
+			expect(oauth.approveConsent).not.toHaveBeenCalled();
 		});
 
 		it("rejects a CSRF token bound to a different Access subject", async () => {

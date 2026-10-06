@@ -2,10 +2,12 @@ import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import {
 	AUTHORIZATION_SERVER_SCOPES,
+	DCR_ENDPOINT,
 	MCP_RESOURCE,
 	OAUTH_ISSUER,
 	RESOURCE_REQUIRED_SCOPES,
 } from "../../src/oauth/config.js";
+import { oauthProviderOptions } from "../../src/oauth/provider.js";
 
 const PRM_URL = `${OAUTH_ISSUER}/.well-known/oauth-protected-resource/mcp`;
 const AS_METADATA_URL = `${OAUTH_ISSUER}/.well-known/oauth-authorization-server`;
@@ -81,5 +83,36 @@ describe("OAuth discovery endpoints", () => {
 			body: JSON.stringify({ redirect_uris: ["https://chatgpt.com/cb"] }),
 		});
 		expect(response.status).toBe(404);
+	});
+});
+
+describe("dynamic client registration configuration", () => {
+	const handler = { fetch: () => new Response() };
+
+	it("does not advertise or enable DCR by default", () => {
+		const options = oauthProviderOptions(handler);
+		expect(options.clientRegistrationEndpoint).toBeUndefined();
+		expect(options.clientRegistrationCallback).toBeUndefined();
+	});
+
+	it("advertises the registration endpoint when OAUTH_DCR_ENABLED=1", () => {
+		const options = oauthProviderOptions(handler, { OAUTH_DCR_ENABLED: "1" });
+		expect(options.clientRegistrationEndpoint).toBe(DCR_ENDPOINT);
+	});
+
+	it("rejects a registered redirect_uri outside the allowlist", () => {
+		const options = oauthProviderOptions(handler, { OAUTH_DCR_ENABLED: "1" });
+		const register = (redirectUri: string) =>
+			options.clientRegistrationCallback?.({
+				clientMetadata: { redirect_uris: [redirectUri] },
+				request: new Request(
+					"https://training-logger.discord.jp/oauth/register",
+					{
+						method: "POST",
+					},
+				),
+			});
+		expect(register("https://chatgpt.com/cb")).toBeUndefined();
+		expect(register("https://evil.example/cb")).toBeDefined();
 	});
 });

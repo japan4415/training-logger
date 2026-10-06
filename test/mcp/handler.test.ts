@@ -16,6 +16,12 @@ import { photoBase64, photoBytes } from "../fixtures/photos.js";
 
 const PNG_BASE64 = "iVBORw0KGgo=";
 
+/** WWW-Authenticate の `scope` 属性を配列にする。 */
+function challengeScopes(challenge: string): string[] {
+	const match = /scope="([^"]*)"/.exec(challenge);
+	return match ? match[1].split(" ").filter(Boolean) : [];
+}
+
 /** `/mcp` の apiHandler を、OAuth ライブラリを通さず偽の ctx で直接呼ぶ。 */
 function mcpContext(
 	userId: number,
@@ -473,9 +479,9 @@ describe("MCP authorization", () => {
 			["mcp:read"],
 		);
 		expect(response.status).toBe(403);
-		expect(response.headers.get("WWW-Authenticate") ?? "").toContain(
-			'scope="mcp:write"',
-		);
+		expect(
+			challengeScopes(response.headers.get("WWW-Authenticate") ?? "").sort(),
+		).toEqual(["mcp:read", "mcp:write"].sort());
 	});
 
 	it("scopes the photo link and upload to the caller's session", async () => {

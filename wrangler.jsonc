@@ -3,7 +3,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   // global_fetch_strictly_public は CIMD（Client ID Metadata Document）取得の SSRF 対策。
-  // 互換日付 2024-11-11 以降が必要で、2026-08-01 は満たしている。
+  // CIMD の取得が使う fetch の cache option に互換日付 2024-11-11 以降が必要で、
+  // 2026-08-01 は満たしている（この日付要件はフラグ自体ではなく fetch の API 要件）。
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": false,
   "routes": [

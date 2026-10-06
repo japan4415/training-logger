@@ -193,9 +193,14 @@ function cookieValue(header: string | undefined, name: string): string | null {
 	return null;
 }
 
+export type AccessAuthError =
+	| "access_not_configured"
+	| "unauthorized"
+	| "csrf_forbidden";
+
 export type AccessAuthResult =
 	| { ok: true; user: JwtPayload | null }
-	| { ok: false; response: Response };
+	| { ok: false; response: Response; error: AccessAuthError };
 
 async function authenticateAccessUser<E extends { Bindings: Bindings }>(
 	c: Context<E>,
@@ -212,6 +217,7 @@ async function authenticateAccessUser<E extends { Bindings: Bindings }>(
 		}
 		return {
 			ok: false,
+			error: "access_not_configured",
 			response: c.json({ error: "access_not_configured" }, 401),
 		};
 	}
@@ -220,14 +226,22 @@ async function authenticateAccessUser<E extends { Bindings: Bindings }>(
 		c.req.header("Cf-Access-Jwt-Assertion") ??
 		cookieValue(c.req.header("Cookie"), "CF_Authorization");
 	if (!token) {
-		return { ok: false, response: c.json({ error: "unauthorized" }, 401) };
+		return {
+			ok: false,
+			error: "unauthorized",
+			response: c.json({ error: "unauthorized" }, 401),
+		};
 	}
 
 	try {
 		const user = await verifyAccessJwt(token, domain, audience, fetchFn);
 		return { ok: true, user };
 	} catch {
-		return { ok: false, response: c.json({ error: "unauthorized" }, 401) };
+		return {
+			ok: false,
+			error: "unauthorized",
+			response: c.json({ error: "unauthorized" }, 401),
+		};
 	}
 }
 
@@ -238,7 +252,11 @@ export async function requireAccessUser<E extends { Bindings: Bindings }>(
 ): Promise<AccessAuthResult> {
 	const fetchSite = c.req.header("Sec-Fetch-Site")?.toLowerCase();
 	if (!fetchSite || (fetchSite !== "same-origin" && fetchSite !== "none")) {
-		return { ok: false, response: c.json({ error: "csrf_forbidden" }, 403) };
+		return {
+			ok: false,
+			error: "csrf_forbidden",
+			response: c.json({ error: "csrf_forbidden" }, 403),
+		};
 	}
 
 	return authenticateAccessUser(c, fetchFn);

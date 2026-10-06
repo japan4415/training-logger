@@ -33,29 +33,37 @@ export function requiredToolScope(toolName: string): McpScope | null {
 	return TOOL_SCOPES[toolName] ?? null;
 }
 
-/**
- * JSON-RPC リクエストボディから `tools/call` の必要 scope を返す。
- *
- * バッチリクエスト（配列）は含まれる `tools/call` をすべて検査し、最初に見つけた
- * 必要 scope を返す。`tools/list` / `initialize` など scope が不要なものは null。
- * パースできないボディでは何も要求しない（transport 側が JSON エラーを返す）。
- */
-export function requiredScopeForBody(body: unknown): McpScope | null {
+function collectRequiredScopes(body: unknown, into: Set<McpScope>): void {
 	if (Array.isArray(body)) {
+		// バッチは含まれる `tools/call` をすべて検査し、必要 scope を漏らさず集める。
 		for (const item of body) {
-			const scope = requiredScopeForBody(item);
-			if (scope) return scope;
+			collectRequiredScopes(item, into);
 		}
-		return null;
+		return;
 	}
-	if (typeof body !== "object" || body === null) return null;
+	if (typeof body !== "object" || body === null) return;
 
 	const request = body as {
 		method?: unknown;
 		params?: { name?: unknown } | null;
 	};
-	if (request.method !== "tools/call") return null;
+	if (request.method !== "tools/call") return;
 	const name = request.params?.name;
-	if (typeof name !== "string") return null;
-	return requiredToolScope(name);
+	if (typeof name !== "string") return;
+	const scope = requiredToolScope(name);
+	if (scope) into.add(scope);
+}
+
+/**
+ * JSON-RPC リクエストボディから `tools/call` の必要 scope を重複なく返す。
+ *
+ * バッチリクエスト（配列）は含まれる `tools/call` をすべて検査する。最初の 1 件だけを
+ * 返すと後続の不足 scope が challenge に載らず step-up が不完全になるため、全件を
+ * 集約する。`tools/list` / `initialize` など scope が不要なものは空配列。
+ * パースできないボディでは何も要求しない（transport 側が JSON エラーを返す）。
+ */
+export function requiredScopesForBody(body: unknown): McpScope[] {
+	const scopes = new Set<McpScope>();
+	collectRequiredScopes(body, scopes);
+	return [...scopes];
 }

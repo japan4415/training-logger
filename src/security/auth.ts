@@ -1,8 +1,14 @@
 import type { Context, Hono } from "hono";
+import { jsx } from "hono/jsx";
 import { resolveAccessIdentity } from "../db/users.js";
 import { DEFAULT_USER_ID } from "../default-user.js";
 import type { AppEnv } from "../env.js";
-import { requireAccessUser, requireAccessUserForRead } from "./access-auth.js";
+import { ConsentErrorPage } from "../views/consent.js";
+import {
+	type AccessAuthError,
+	requireAccessUser,
+	requireAccessUserForRead,
+} from "./access-auth.js";
 
 type FetchFn = typeof fetch;
 
@@ -33,6 +39,34 @@ const PUBLIC_EXACT_PATHS = new Set(["/favicon.ico", "/robots.txt"]);
 
 /** CSRF（Fetch Metadata）検査を省略してよい安全なメソッド。 */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** 同意画面を出す `/authorize` のパス（正規化後）。 */
+const AUTHORIZE_PAGE_PATH = "/authorize";
+
+/** 認証・アカウント状態の失敗を同意画面向けの日本語メッセージへ対応付ける。 */
+const ACCESS_ERROR_MESSAGES: Record<AccessAuthError, string> = {
+	access_not_configured:
+		"サーバーの認証設定が完了していません。管理者に連絡してください。",
+	unauthorized:
+		"ログインが必要です。Cloudflare Access でログインしてから、コネクタから接続し直してください。",
+	csrf_forbidden:
+		"リクエストの検証に失敗しました。前の画面に戻ってやり直してください。",
+};
+
+/**
+ * `/authorize` の認証・アカウント失敗を同意画面の HTML で表示する（それ以外の
+ * パスは JSON のまま返すかどうかを呼び出し側で決める）。
+ */
+function authFailureResponse(
+	c: Context<AppEnv>,
+	status: number,
+	message: string,
+): Response {
+	return c.html(jsx(ConsentErrorPage, { message }) as never, status as never, {
+		"Content-Security-Policy": "frame-ancestors 'none'",
+		"Cache-Control": "no-store",
+	});
+}
 
 /**
  * 公開パス判定用にリクエストパスを正規化する。
@@ -101,7 +135,16 @@ export function registerAccessAuth(
 		const auth = isSafe
 			? await requireAccessUserForRead(c, fetchFn)
 			: await requireAccessUser(c, fetchFn);
-		if (!auth.ok) return auth.response;
+		if (!auth.ok) {
+			if (normalizePath(c.req.path) === AUTHORIZE_PAGE_PATH) {
+				return authFailureResponse(
+					c,
+					auth.response.status,
+					ACCESS_ERROR_MESSAGES[auth.error],
+				);
+			}
+			return auth.response;
+		}
 
 		// ACCESS_* 未設定かつローカル開発フラグが有効なときだけ user: null になる。
 		// 本番ではこの分岐に入らない（authenticateAccessUser が 401 を返す）。
@@ -112,8 +155,12 @@ export function registerAccessAuth(
 			return;
 		}
 
+		const isAuthorizePage = normalizePath(c.req.path) === AUTHORIZE_PAGE_PATH;
 		const subject = auth.user.sub;
 		if (!subject) {
+			if (isAuthorizePage) {
+				return authFailureResponse(c, 401, ACCESS_ERROR_MESSAGES.unauthorized);
+			}
 			return c.json({ error: "unauthorized" }, 401);
 		}
 
@@ -122,14 +169,29 @@ export function registerAccessAuth(
 			email: auth.user.email ?? null,
 		});
 		if (resolution.status === "not_registered") {
+			if (isAuthorizePage) {
+				return authFailureResponse(
+					c,
+					403,
+					"このアカウントは登録されていません。管理者に連絡してください。",
+				);
+			}
 			return c.json({ error: "user_not_registered" }, 403);
 		}
 		if (resolution.status === "disabled") {
+			if (isAuthorizePage) {
+				return authFailureResponse(
+					c,
+					403,
+					"このアカウントは無効化されています。管理者に連絡してください。",
+				);
+			}
 			return c.json({ error: "account_disabled" }, 403);
 		}
 
 		c.set("userId", resolution.userId);
 		c.set("accessSubject", subject);
+		c.set("accessEmail", auth.user.email ?? undefined);
 		await next();
 	});
 }

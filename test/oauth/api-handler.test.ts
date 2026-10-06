@@ -85,6 +85,12 @@ interface ToolCallResponse {
 	result: { content: Array<{ text: string }>; isError?: boolean };
 }
 
+/** WWW-Authenticate の `scope` 属性を配列にする。 */
+function challengeScopes(challenge: string): string[] {
+	const match = /scope="([^"]*)"/.exec(challenge);
+	return match ? match[1].split(" ").filter(Boolean) : [];
+}
+
 describe("/mcp apiHandler authorization", () => {
 	beforeAll(() => applyMigrations(env.DB));
 	beforeEach(() => cleanDatabase(env.DB));
@@ -106,7 +112,10 @@ describe("/mcp apiHandler authorization", () => {
 		expect(response.status).toBe(403);
 		const challenge = response.headers.get("WWW-Authenticate") ?? "";
 		expect(challenge).toContain('error="insufficient_scope"');
-		expect(challenge).toContain('scope="mcp:read"');
+		// 既存 scope（photos:write）を残しつつ、baseline の mcp:read を要求する。
+		expect(challengeScopes(challenge).sort()).toEqual(
+			["mcp:read", "photos:write"].sort(),
+		);
 		expect(challenge).toContain(
 			`resource_metadata="${MCP_RESOURCE.replace("/mcp", "/.well-known/oauth-protected-resource/mcp")}"`,
 		);
@@ -145,7 +154,10 @@ describe("/mcp tool authorization", () => {
 		expect(response.status).toBe(403);
 		const challenge = response.headers.get("WWW-Authenticate") ?? "";
 		expect(challenge).toContain('error="insufficient_scope"');
-		expect(challenge).toContain('scope="mcp:write"');
+		// 不足分だけでなく、いま持っている mcp:read も challenge に含める。
+		expect(challengeScopes(challenge).sort()).toEqual(
+			["mcp:read", "mcp:write"].sort(),
+		);
 	});
 
 	it("requires photos:write for the photo tools", async () => {
@@ -154,9 +166,36 @@ describe("/mcp tool authorization", () => {
 			body: toolCall("create_photo_upload_link", { date: "2026-09-14" }),
 		});
 		expect(response.status).toBe(403);
-		expect(response.headers.get("WWW-Authenticate") ?? "").toContain(
-			'scope="photos:write"',
-		);
+		expect(
+			challengeScopes(response.headers.get("WWW-Authenticate") ?? ""),
+		).toContain("photos:write");
+	});
+
+	it("aggregates every missing scope in a batch request", async () => {
+		const response = await callMcp({
+			scope: ["mcp:read"],
+			body: [
+				{
+					jsonrpc: "2.0",
+					id: 1,
+					method: "tools/call",
+					params: { name: "get_history", arguments: {} },
+				},
+				{
+					jsonrpc: "2.0",
+					id: 2,
+					method: "tools/call",
+					params: {
+						name: "create_photo_upload_link",
+						arguments: { date: "2026-09-14" },
+					},
+				},
+			],
+		});
+		expect(response.status).toBe(403);
+		expect(
+			challengeScopes(response.headers.get("WWW-Authenticate") ?? "").sort(),
+		).toEqual(["mcp:read", "photos:write"].sort());
 	});
 
 	it("serves read-only tools with just mcp:read", async () => {

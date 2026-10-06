@@ -89,6 +89,12 @@ function mcpRequest(body: unknown, token?: string): Promise<Response> {
 	});
 }
 
+/** WWW-Authenticate の `scope` 属性を配列にする。 */
+function challengeScopes(challenge: string): string[] {
+	const match = /scope="([^"]*)"/.exec(challenge);
+	return match ? match[1].split(" ").filter(Boolean) : [];
+}
+
 describe("/mcp end-to-end through the OAuth provider", () => {
 	beforeAll(() => applyMigrations(env.DB));
 	beforeEach(() => cleanDatabase(env.DB));
@@ -136,8 +142,8 @@ describe("/mcp end-to-end through the OAuth provider", () => {
 			token,
 		);
 		expect(response.status).toBe(403);
-		expect(response.headers.get("WWW-Authenticate") ?? "").toContain(
-			'scope="mcp:write"',
-		);
+		expect(
+			challengeScopes(response.headers.get("WWW-Authenticate") ?? "").sort(),
+		).toEqual(["mcp:read", "mcp:write"].sort());
 	});
 });

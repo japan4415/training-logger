@@ -14,6 +14,7 @@
 
 import {
 	AuthorizationError,
+	type AuthorizationErrorCode,
 	CimdFetchError,
 } from "@cloudflare/workers-oauth-provider";
 import type { Context, Hono } from "hono";
@@ -24,6 +25,7 @@ import type { McpAuthProps } from "./api-handler.js";
 import {
 	allowedRedirectHosts,
 	isAllowedAuthorizationRequest,
+	isAllowedRedirectUri,
 } from "./config.js";
 import {
 	consentCsrfSecret,
@@ -32,6 +34,23 @@ import {
 } from "./csrf.js";
 
 const CONSENT_CSP = "frame-ancestors 'none'";
+
+/** 認可リクエストの検証エラーを日本語で説明する（ライブラリの英語 description は出さない）。 */
+const AUTHORIZE_ERROR_MESSAGES: Readonly<
+	Record<AuthorizationErrorCode, string>
+> = {
+	invalid_request:
+		"認可リクエストの内容が正しくないため、続行できませんでした。",
+	invalid_target:
+		"アクセス先（resource）が正しくないため、続行できませんでした。",
+	unauthorized_client: "このクライアントは許可されていません。",
+	access_denied: "アクセスが拒否されました。",
+	unsupported_response_type: "この応答方式には対応していません。",
+	invalid_scope: "要求された権限が正しくありません。",
+	server_error: "サーバー側のエラーで続行できませんでした。",
+	temporarily_unavailable:
+		"一時的に利用できません。時間をおいて再度お試しください。",
+};
 
 function htmlWithHeaders(
 	c: Context<AppEnv>,
@@ -63,12 +82,20 @@ function errorPage(
 }
 
 /**
- * パース / 同意の失敗を処理する。redirect が安全に作れる（クライアントと
- * redirect_uri が検証済み）ときだけクライアントへ返し、それ以外はローカル表示する。
+ * パース / 同意の失敗を処理する。redirect が安全に作れる（redirect_uri / ホストが
+ * 許可リストに載っている）ときだけクライアントへ返し、それ以外はローカル表示する。
+ *
+ * `parseAuthRequest` は PKCE / resource / response_type の検証エラーでも
+ * `redirectTo` を組み立てる（許可リスト判定より前）。ここでホストを必ず検証し、
+ * 許可リスト外のホストへの 302（オープンリダイレクト）を防ぐ。
  */
-function handleAuthorizeError(c: Context<AppEnv>, error: unknown): Response {
+function handleAuthorizeError(
+	c: Context<AppEnv>,
+	error: unknown,
+	allowed: Set<string>,
+): Response {
 	if (error instanceof AuthorizationError) {
-		if (error.redirectTo) {
+		if (error.redirectTo && isAllowedRedirectUri(error.redirectTo, allowed)) {
 			return new Response(null, {
 				status: 302,
 				headers: {
@@ -78,7 +105,11 @@ function handleAuthorizeError(c: Context<AppEnv>, error: unknown): Response {
 				},
 			});
 		}
-		return errorPage(c, 400, error.description);
+		return errorPage(
+			c,
+			400,
+			`${AUTHORIZE_ERROR_MESSAGES[error.code] ?? "認可できませんでした。"}（${error.code}）`,
+		);
 	}
 	if (error instanceof CimdFetchError) {
 		return errorPage(
@@ -109,9 +140,9 @@ export function registerAuthorizeRoutes(app: Hono<AppEnv>): void {
 		const secret = consentCsrfSecret(c.env, c.req.url);
 		if (!secret) return settingsMissing(c);
 
+		const allowed = allowedRedirectHosts(c.env.OAUTH_ALLOWED_REDIRECT_HOSTS);
 		try {
 			const request = await oauth.parseAuthRequest(c.req.raw);
-			const allowed = allowedRedirectHosts(c.env.OAUTH_ALLOWED_REDIRECT_HOSTS);
 			if (!isAllowedAuthorizationRequest(request, allowed)) {
 				return errorPage(
 					c,
@@ -136,6 +167,7 @@ export function registerAuthorizeRoutes(app: Hono<AppEnv>): void {
 					redirectHost={details.redirectHost}
 					redirectIsLoopback={details.redirectIsLoopback}
 					scopes={details.scope}
+					accountEmail={c.get("accessEmail") ?? null}
 					handle={consent.handle}
 					csrfToken={csrfToken}
 				/>,
@@ -143,7 +175,7 @@ export function registerAuthorizeRoutes(app: Hono<AppEnv>): void {
 				consent.headers,
 			);
 		} catch (error) {
-			return handleAuthorizeError(c, error);
+			return handleAuthorizeError(c, error, allowed);
 		}
 	});
 
@@ -157,6 +189,7 @@ export function registerAuthorizeRoutes(app: Hono<AppEnv>): void {
 		const secret = consentCsrfSecret(c.env, c.req.url);
 		if (!secret) return settingsMissing(c);
 
+		const allowed = allowedRedirectHosts(c.env.OAUTH_ALLOWED_REDIRECT_HOSTS);
 		const form = await c.req.formData();
 		const handle = String(form.get("handle") ?? "");
 		const csrfToken = String(form.get("csrf") ?? "");
@@ -181,6 +214,13 @@ export function registerAuthorizeRoutes(app: Hono<AppEnv>): void {
 		try {
 			if (decision !== "approve") {
 				const denied = await oauth.denyConsent(c.req.raw, handle);
+				if (!isAllowedAuthorizationRequest(denied.request, allowed)) {
+					return errorPage(
+						c,
+						400,
+						"このクライアントの redirect_uri は許可されていません。",
+					);
+				}
 				denied.headers.set("Content-Security-Policy", CONSENT_CSP);
 				return new Response(null, {
 					status: 302,
@@ -188,7 +228,11 @@ export function registerAuthorizeRoutes(app: Hono<AppEnv>): void {
 				});
 			}
 
-			const scopes = form.getAll("scope").map(String);
+			// 空の scope で承認すると、権限の無い grant を作ってしまう。
+			const scopes = form.getAll("scope").map(String).filter(Boolean);
+			if (scopes.length === 0) {
+				return errorPage(c, 400, "少なくとも 1 つの権限を選んでください。");
+			}
 			const approved = await oauth.approveConsent(c.req.raw, handle, {
 				scope: scopes,
 			});
@@ -200,6 +244,13 @@ export function registerAuthorizeRoutes(app: Hono<AppEnv>): void {
 				scope: approved.request.scope,
 				props,
 			});
+			if (!isAllowedAuthorizationRequest(approved.request, allowed)) {
+				return errorPage(
+					c,
+					400,
+					"このクライアントの redirect_uri は許可されていません。",
+				);
+			}
 			approved.headers.set("Location", redirectTo);
 			approved.headers.set("Content-Security-Policy", CONSENT_CSP);
 			return new Response(null, {
@@ -207,7 +258,7 @@ export function registerAuthorizeRoutes(app: Hono<AppEnv>): void {
 				headers: approved.headers,
 			});
 		} catch (error) {
-			return handleAuthorizeError(c, error);
+			return handleAuthorizeError(c, error, allowed);
 		}
 	});
 }
