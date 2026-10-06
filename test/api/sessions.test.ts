@@ -25,25 +25,25 @@ async function seedTestData() {
 	});
 
 	// Session 1: 2026-08-15 (土)
-	const { session: s1 } = await getOrCreateSession(env.DB, {
+	const { session: s1 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-15",
 		goal: "ダイエット",
 		bodyCondition: "普通",
 	});
-	const se1bench = await createSessionExercise(env.DB, {
+	const se1bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: bench.id,
 		equipmentNote: "マシンA",
 	});
-	await replaceSets(env.DB, se1bench.id, [
+	await replaceSets(env.DB, 1, se1bench.id, [
 		{ reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ reps: 8, weightValue: 65, weightUnit: "kg" },
 	]);
-	const se1walk = await createSessionExercise(env.DB, {
+	const se1walk = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: walking.id,
 	});
-	await replaceSets(env.DB, se1walk.id, [
+	await replaceSets(env.DB, 1, se1walk.id, [
 		{
 			durationMinutes: 10,
 			speedMin: 3.5,
@@ -53,18 +53,18 @@ async function seedTestData() {
 	]);
 
 	// Session 2: 2026-08-16 (日) — with planned + actual sets
-	const { session: s2 } = await getOrCreateSession(env.DB, {
+	const { session: s2 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-16",
 		goal: "上半身",
 		bodyCondition: "良好",
 		notes: "調子が良い",
 	});
-	const se2bench = await createSessionExercise(env.DB, {
+	const se2bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s2.id,
 		exerciseId: bench.id,
 		formCues: "肘を締める",
 	});
-	await replaceSets(env.DB, se2bench.id, [
+	await replaceSets(env.DB, 1, se2bench.id, [
 		{ isPlanned: true, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: true, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: false, reps: 10, weightValue: 60, weightUnit: "kg" },
@@ -189,7 +189,7 @@ describe("Sessions API", () => {
 
 	describe("GET /api/sessions/:id", () => {
 		it("merges completed exact assignments with primary precedence and preserves legacy summaries", async () => {
-			const { session } = await getOrCreateSession(env.DB, {
+			const { session } = await getOrCreateSession(env.DB, 1, {
 				sessionDate: "2026-09-10",
 			});
 			const first = {
@@ -252,7 +252,7 @@ describe("Sessions API", () => {
 					atlas_muscles: fixture.assignment,
 					target_muscles: fixture.target,
 				});
-				await createSessionExercise(env.DB, {
+				await createSessionExercise(env.DB, 1, {
 					sessionId: session.id,
 					exerciseId: exercise.id,
 					status: fixture.status,
@@ -412,10 +412,10 @@ describe("Sessions API", () => {
 				name: "ストレッチ",
 				category: "flexibility",
 			});
-			const { session: s3 } = await getOrCreateSession(env.DB, {
+			const { session: s3 } = await getOrCreateSession(env.DB, 1, {
 				sessionDate: "2026-09-01",
 			});
-			await createSessionExercise(env.DB, {
+			await createSessionExercise(env.DB, 1, {
 				sessionId: s3.id,
 				exerciseId: stretch.id,
 			});
@@ -443,12 +443,12 @@ describe("Sessions API", () => {
 				target_muscles: "脚",
 			});
 
-			const { session: s4 } = await getOrCreateSession(env.DB, {
+			const { session: s4 } = await getOrCreateSession(env.DB, 1, {
 				sessionDate: "2026-10-01",
 			});
 
 			// skipped exercise
-			const seSkipped = await createSessionExercise(env.DB, {
+			const seSkipped = await createSessionExercise(env.DB, 1, {
 				sessionId: s4.id,
 				exerciseId: skippedEx.id,
 			});
@@ -459,7 +459,7 @@ describe("Sessions API", () => {
 				.run();
 
 			// planned exercise
-			const sePlanned = await createSessionExercise(env.DB, {
+			const sePlanned = await createSessionExercise(env.DB, 1, {
 				sessionId: s4.id,
 				exerciseId: plannedEx.id,
 			});
@@ -470,7 +470,7 @@ describe("Sessions API", () => {
 				.run();
 
 			// completed exercise
-			await createSessionExercise(env.DB, {
+			await createSessionExercise(env.DB, 1, {
 				sessionId: s4.id,
 				exerciseId: completedEx.id,
 			});

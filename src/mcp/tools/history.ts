@@ -95,9 +95,10 @@ const DEFAULT_LAST_N_SESSIONS = 5;
  */
 export async function getHistoryHandler(
 	env: Bindings,
+	userId: number,
 	params: GetHistoryParams,
 ): Promise<GetHistoryResult> {
-	const details = await getHistory(env.DB, {
+	const details = await getHistory(env.DB, userId, {
 		exerciseName: params.exerciseName,
 		dateFrom: params.dateFrom,
 		dateTo: params.dateTo,
@@ -111,7 +112,11 @@ export async function getHistoryHandler(
 /**
  * Register the get_history tool on an McpServer instance.
  */
-export function registerHistoryTools(server: McpServer, env: Bindings): void {
+export function registerHistoryTools(
+	server: McpServer,
+	env: Bindings,
+	userId: number,
+): void {
 	server.registerTool(
 		"get_history",
 		{
@@ -146,7 +151,7 @@ export function registerHistoryTools(server: McpServer, env: Bindings): void {
 			},
 		},
 		async (args) => {
-			const result = await getHistoryHandler(env, {
+			const result = await getHistoryHandler(env, userId, {
 				exerciseName: args.exercise_name,
 				dateFrom: args.date_from,
 				dateTo: args.date_to,

@@ -46,11 +46,12 @@ export interface HistoryParams {
 }
 
 /**
- * Get workout history with filters.
+ * Get workout history with filters, scoped to the given user.
  * When exerciseName is specified, only matching exercises are included in each session.
  */
 export async function getHistory(
 	db: D1Database,
+	userId: number,
 	params: HistoryParams = {},
 ): Promise<SessionDetail[]> {
 	const {
@@ -69,9 +70,10 @@ export async function getHistory(
 		exerciseId = exercise.id;
 	}
 
-	// Build session query dynamically (only structural parts, values are bound)
-	const conditions: string[] = [];
-	const bindings: (string | number)[] = [];
+	// Build session query dynamically (only structural parts, values are bound).
+	// Ownership is always the first condition so other users' sessions never leak.
+	const conditions: string[] = ["ws.user_id = ?"];
+	const bindings: (string | number)[] = [userId];
 
 	let sql = "SELECT DISTINCT ws.* FROM workout_sessions ws";
 
@@ -122,15 +124,17 @@ export async function getHistory(
 }
 
 /**
- * Get full details of a single session (all exercises and sets).
+ * Get full details of a single session owned by the given user.
+ * Another user's session is treated as non-existent (null).
  */
 export async function getSessionDetail(
 	db: D1Database,
+	userId: number,
 	sessionId: number,
 ): Promise<SessionDetail | null> {
 	const session = await db
-		.prepare("SELECT * FROM workout_sessions WHERE id = ?")
-		.bind(sessionId)
+		.prepare("SELECT * FROM workout_sessions WHERE id = ? AND user_id = ?")
+		.bind(sessionId, userId)
 		.first<WorkoutSessionRow>();
 
 	if (!session) return null;
@@ -139,8 +143,10 @@ export async function getSessionDetail(
 }
 
 /**
- * Get statistics for a specific exercise.
- * Only considers actual performance (is_planned = 0).
+ * Get statistics for a specific exercise, scoped to the given user.
+ * Only considers actual performance (is_planned = 0). Sessions belonging to
+ * other users are excluded so shared-master exercises do not leak cross-user
+ * aggregates.
  *
  * Note on maxWeight: The comparison uses raw weight_value regardless of unit.
  * kg/lbs/level values are not converted, following the design decision in
@@ -155,6 +161,7 @@ export async function getSessionDetail(
  */
 export async function getExerciseStats(
 	db: D1Database,
+	userId: number,
 	exerciseId: number,
 ): Promise<ExerciseStatsResult | null> {
 	const exercise = await db
@@ -164,18 +171,19 @@ export async function getExerciseStats(
 
 	if (!exercise) return null;
 
-	// Total sessions containing this exercise
+	// Total sessions containing this exercise (this user only)
 	const totalResult = await db
 		.prepare(
 			`SELECT COUNT(DISTINCT se.session_id) as total
 			 FROM session_exercises se
-			 WHERE se.exercise_id = ?`,
+			 JOIN workout_sessions ws ON se.session_id = ws.id
+			 WHERE se.exercise_id = ? AND ws.user_id = ?`,
 		)
-		.bind(exerciseId)
+		.bind(exerciseId, userId)
 		.first<{ total: number }>();
 	const totalSessions = totalResult?.total ?? 0;
 
-	// Max weight (actual sets only)
+	// Max weight (actual sets only, this user only)
 	const maxWeightRow = await db
 		.prepare(
 			`SELECT s.weight_value, s.weight_unit, ws.session_date
@@ -183,12 +191,13 @@ export async function getExerciseStats(
 			 JOIN session_exercises se ON s.session_exercise_id = se.id
 			 JOIN workout_sessions ws ON se.session_id = ws.id
 			 WHERE se.exercise_id = ?
+			   AND ws.user_id = ?
 			   AND s.weight_value IS NOT NULL
 			   AND s.is_planned = 0
 			 ORDER BY s.weight_value DESC
 			 LIMIT 1`,
 		)
-		.bind(exerciseId)
+		.bind(exerciseId, userId)
 		.first<{
 			weight_value: number;
 			weight_unit: string;
@@ -203,7 +212,7 @@ export async function getExerciseStats(
 			}
 		: null;
 
-	// Per-session summaries (actual sets only)
+	// Per-session summaries (actual sets only, this user only)
 	const { results: summaries } = await db
 		.prepare(
 			`SELECT ws.session_date,
@@ -213,11 +222,12 @@ export async function getExerciseStats(
 			 JOIN workout_sessions ws ON se.session_id = ws.id
 			 JOIN sets s ON se.id = s.session_exercise_id
 			 WHERE se.exercise_id = ?
+			   AND ws.user_id = ?
 			   AND s.is_planned = 0
 			 GROUP BY ws.id
 			 ORDER BY ws.session_date DESC`,
 		)
-		.bind(exerciseId)
+		.bind(exerciseId, userId)
 		.all<{ session_date: string; total_reps: number; total_sets: number }>();
 
 	return {

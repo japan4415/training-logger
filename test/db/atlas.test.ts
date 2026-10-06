@@ -124,18 +124,18 @@ describe("Persisted Atlas assignments", () => {
 			name: "JOIN test",
 			atlas_muscles: assignment,
 		});
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-10",
 		});
-		await createSessionExercise(env.DB, {
+		await createSessionExercise(env.DB, 1, {
 			sessionId: session.id,
 			exerciseId: exercise.id,
 		});
-		const detail = await getSessionDetail(env.DB, session.id);
+		const detail = await getSessionDetail(env.DB, 1, session.id);
 		expect(
 			JSON.parse(detail?.exercises[0].exercise.atlas_muscles ?? "null"),
 		).toEqual(assignment);
-		const history = await getHistory(env.DB, { includeSets: false });
+		const history = await getHistory(env.DB, 1, { includeSets: false });
 		expect(
 			JSON.parse(history[0].exercises[0].exercise.atlas_muscles ?? "null"),
 		).toEqual(assignment);

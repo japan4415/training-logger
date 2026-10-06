@@ -28,14 +28,14 @@ describe("session photos API", () => {
 	beforeAll(() => applyMigrations(env.DB));
 	beforeEach(async () => {
 		await cleanDatabase(env.DB);
-		const listed = await env.PHOTOS.list({ prefix: "sessions/" });
+		const listed = await env.PHOTOS.list();
 		if (listed.objects.length) {
 			await env.PHOTOS.delete(listed.objects.map((object) => object.key));
 		}
 	});
 
 	it("posts, lists, and streams a photo with safe headers", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const created = await app.request(
@@ -68,7 +68,7 @@ describe("session photos API", () => {
 	});
 
 	it("returns 400 for malformed multipart and unsupported or oversized data", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const path = `/api/sessions/${session.id}/photos`;
@@ -119,7 +119,7 @@ describe("session photos API", () => {
 	});
 
 	it("returns 411 before parsing when Content-Length is missing", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const response = await app.request(
@@ -130,12 +130,12 @@ describe("session photos API", () => {
 		expect(response.status).toBe(411);
 		expect((await response.json()).error).toBe("length_required");
 		expect(
-			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+			(await env.PHOTOS.list({ prefix: "users/1/sessions/" })).objects,
 		).toHaveLength(0);
 	});
 
 	it("redirects a native HTML form upload back to the photo section", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const response = await app.request(
@@ -167,7 +167,7 @@ describe("session photos API", () => {
 	});
 
 	it("returns 409 and leaves only four objects at the limit", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const path = `/api/sessions/${session.id}/photos`;
@@ -190,12 +190,12 @@ describe("session photos API", () => {
 		expect(response.status).toBe(409);
 		expect((await response.json()).error).toBe("limit_exceeded");
 		expect(
-			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+			(await env.PHOTOS.list({ prefix: "users/1/sessions/" })).objects,
 		).toHaveLength(4);
 	});
 
 	it("fails closed without Access settings and blocks cross-site requests", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const path = `/api/sessions/${session.id}/photos`;
@@ -228,7 +228,7 @@ describe("session photos API", () => {
 	});
 
 	it("deletes a photo", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const created = await app.request(
@@ -244,12 +244,12 @@ describe("session photos API", () => {
 		);
 		expect(deleted.status).toBe(204);
 		expect(
-			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+			(await env.PHOTOS.list({ prefix: "users/1/sessions/" })).objects,
 		).toHaveLength(0);
 	});
 
 	it("prunes a stale D1 row when the R2 object is missing from a list", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const created = await app.request(
@@ -261,7 +261,7 @@ describe("session photos API", () => {
 			photo: { id: string; url: string };
 		};
 		await env.PHOTOS.delete(
-			`sessions/2026-09-14/${session.id}/${photo.id}.jpg`,
+			`users/1/sessions/2026-09-14/${session.id}/${photo.id}.jpg`,
 		);
 
 		const response = await app.request(
@@ -279,7 +279,7 @@ describe("session photos API", () => {
 	});
 
 	it("returns 404 and prunes metadata when an image body is missing", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const created = await app.request(
@@ -291,7 +291,7 @@ describe("session photos API", () => {
 			photo: { id: string; url: string };
 		};
 		await env.PHOTOS.delete(
-			`sessions/2026-09-14/${session.id}/${photo.id}.jpg`,
+			`users/1/sessions/2026-09-14/${session.id}/${photo.id}.jpg`,
 		);
 
 		const response = await app.request(photo.url, {}, allowEnv());
@@ -304,7 +304,7 @@ describe("session photos API", () => {
 	});
 
 	it("rejects a delete when Sec-Fetch-Site is missing", async () => {
-		const { session } = await getOrCreateSession(env.DB, {
+		const { session } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
 		const created = await app.request(
@@ -322,15 +322,15 @@ describe("session photos API", () => {
 		expect(response.status).toBe(403);
 		expect((await response.json()).error).toBe("csrf_forbidden");
 		expect(
-			(await env.PHOTOS.list({ prefix: "sessions/" })).objects,
+			(await env.PHOTOS.list({ prefix: "users/1/sessions/" })).objects,
 		).toHaveLength(1);
 	});
 
 	it("returns 404 when a photo is addressed through another session", async () => {
-		const { session: owner } = await getOrCreateSession(env.DB, {
+		const { session: owner } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-14",
 		});
-		const { session: other } = await getOrCreateSession(env.DB, {
+		const { session: other } = await getOrCreateSession(env.DB, 1, {
 			sessionDate: "2026-09-15",
 		});
 		const created = await app.request(
@@ -354,7 +354,9 @@ describe("session photos API", () => {
 			).status,
 		).toBe(404);
 		expect(
-			await env.PHOTOS.get(`sessions/2026-09-14/${owner.id}/${photo.id}.jpg`),
+			await env.PHOTOS.get(
+				`users/1/sessions/2026-09-14/${owner.id}/${photo.id}.jpg`,
+			),
 		).not.toBeNull();
 	});
 });

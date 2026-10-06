@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import type { FC } from "hono/jsx";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import type { Bindings } from "../env.js";
 import { Layout } from "./layout.js";
 
@@ -57,19 +58,31 @@ function parseCategory(value: string | undefined): CategoryFilter {
 // Data access (direct SQL – not modifying src/db/)
 // ---------------------------------------------------------------------------
 
+/**
+ * Fetch exercises with per-user aggregates.
+ *
+ * The LEFT JOIN goes through a derived table already filtered to the current
+ * user's sessions, so the shared exercise master is preserved while last
+ * performed / session count only reflect this user's records.
+ */
 async function fetchExerciseList(
 	db: D1Database,
+	userId: number,
 	category: CategoryFilter,
 ): Promise<ExerciseListRow[]> {
 	let sql = `
 		SELECT e.id, e.name, e.category, e.equipment,
-		       MAX(ws.session_date) AS last_performed,
-		       COUNT(DISTINCT se.session_id) AS total_sessions
+		       MAX(owned.session_date) AS last_performed,
+		       COUNT(DISTINCT owned.id) AS total_sessions
 		FROM exercises e
-		LEFT JOIN session_exercises se ON e.id = se.exercise_id
-		LEFT JOIN workout_sessions ws ON se.session_id = ws.id`;
+		LEFT JOIN (
+			SELECT ws.id, ws.session_date, se.exercise_id
+			FROM workout_sessions ws
+			JOIN session_exercises se ON se.session_id = ws.id
+			WHERE ws.user_id = ?
+		) owned ON e.id = owned.exercise_id`;
 
-	const bindings: string[] = [];
+	const bindings: (string | number)[] = [userId];
 
 	if (category) {
 		sql += " WHERE e.category = ?";
@@ -78,8 +91,7 @@ async function fetchExerciseList(
 
 	sql += " GROUP BY e.id ORDER BY e.name";
 
-	const stmt =
-		bindings.length > 0 ? db.prepare(sql).bind(...bindings) : db.prepare(sql);
+	const stmt = db.prepare(sql).bind(...bindings);
 	const { results } = await stmt.all<ExerciseListRow>();
 	return results;
 }
@@ -160,7 +172,11 @@ export function registerExerciseListRoutes(
 ): void {
 	app.get("/exercises", async (c) => {
 		const category = parseCategory(c.req.query("category"));
-		const exercises = await fetchExerciseList(c.env.DB, category);
+		const exercises = await fetchExerciseList(
+			c.env.DB,
+			DEFAULT_USER_ID,
+			category,
+		);
 		const isHtmx = c.req.header("HX-Request") === "true";
 
 		if (isHtmx) {

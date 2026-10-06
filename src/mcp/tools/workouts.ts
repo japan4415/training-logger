@@ -167,13 +167,14 @@ export interface DeleteWorkoutResult {
 
 export async function logWorkoutHandler(
 	env: Bindings,
+	userId: number,
 	params: LogWorkoutParams,
 ): Promise<LogWorkoutResult> {
 	const db = env.DB;
 	const date = params.date ?? getTodayDateJST();
 
 	// Get or create session
-	const { session, created } = await getOrCreateSession(db, {
+	const { session, created } = await getOrCreateSession(db, userId, {
 		sessionDate: date,
 		goal: params.goal ?? null,
 		bodyCondition: params.body_condition ?? null,
@@ -182,7 +183,7 @@ export async function logWorkoutHandler(
 
 	// If session already existed, update metadata fields if provided
 	if (!created) {
-		await updateSession(db, session.id, {
+		await updateSession(db, userId, session.id, {
 			goal: params.goal,
 			bodyCondition: params.body_condition,
 			notes: params.session_notes,
@@ -202,7 +203,7 @@ export async function logWorkoutHandler(
 		}
 
 		// Create session_exercise
-		const sessionExercise = await createSessionExercise(db, {
+		const sessionExercise = await createSessionExercise(db, userId, {
 			sessionId: session.id,
 			exerciseId,
 			equipmentNote: exerciseInput.equipment_note ?? null,
@@ -213,7 +214,12 @@ export async function logWorkoutHandler(
 		// Create sets if provided
 		if (exerciseInput.sets && exerciseInput.sets.length > 0) {
 			const setInputs = exerciseInput.sets.map(toSetInput);
-			const createdSets = await replaceSets(db, sessionExercise.id, setInputs);
+			const createdSets = await replaceSets(
+				db,
+				userId,
+				sessionExercise.id,
+				setInputs,
+			);
 			totalSetsLogged += createdSets.length;
 		}
 	}
@@ -230,9 +236,11 @@ export async function logWorkoutHandler(
 /**
  * Find a session_exercise by various identification methods.
  * Returns the session_exercise ID or throws a descriptive error.
+ * The parent session must belong to the given user.
  */
 async function findSessionExercise(
 	db: D1Database,
+	userId: number,
 	sessionId: number,
 	params: {
 		sessionExerciseId?: number;
@@ -244,9 +252,11 @@ async function findSessionExercise(
 	if (params.sessionExerciseId !== undefined) {
 		const row = await db
 			.prepare(
-				"SELECT id FROM session_exercises WHERE id = ? AND session_id = ?",
+				`SELECT se.id FROM session_exercises se
+				 JOIN workout_sessions ws ON se.session_id = ws.id
+				 WHERE se.id = ? AND se.session_id = ? AND ws.user_id = ?`,
 			)
-			.bind(params.sessionExerciseId, sessionId)
+			.bind(params.sessionExerciseId, sessionId, userId)
 			.first<{ id: number }>();
 		if (!row) {
 			throw new Error(
@@ -271,10 +281,11 @@ async function findSessionExercise(
 	const { results } = await db
 		.prepare(
 			`SELECT se.id, se.display_order FROM session_exercises se
-			 WHERE se.session_id = ? AND se.exercise_id = ?
+			 JOIN workout_sessions ws ON se.session_id = ws.id
+			 WHERE se.session_id = ? AND se.exercise_id = ? AND ws.user_id = ?
 			 ORDER BY se.display_order`,
 		)
-		.bind(sessionId, exercise.id)
+		.bind(sessionId, exercise.id, userId)
 		.all<{ id: number; display_order: number }>();
 
 	if (results.length === 0) {
@@ -305,18 +316,19 @@ async function findSessionExercise(
 
 export async function updateWorkoutHandler(
 	env: Bindings,
+	userId: number,
 	params: UpdateWorkoutParams,
 ): Promise<UpdateWorkoutResult> {
 	const db = env.DB;
 
 	// Find session by date
-	const session = await getSessionByDate(db, params.date);
+	const session = await getSessionByDate(db, userId, params.date);
 	if (!session) {
 		throw new Error(`No session found for date ${params.date}`);
 	}
 
 	// Find target session_exercise
-	const sessionExerciseId = await findSessionExercise(db, session.id, {
+	const sessionExerciseId = await findSessionExercise(db, userId, session.id, {
 		sessionExerciseId: params.session_exercise_id,
 		exerciseName: params.exercise_name,
 		exerciseOrder: params.exercise_order,
@@ -349,14 +361,14 @@ export async function updateWorkoutHandler(
 	}
 
 	if (updatedFields.length > 0) {
-		await updateSessionExercise(db, sessionExerciseId, updateParams);
+		await updateSessionExercise(db, userId, sessionExerciseId, updateParams);
 	}
 
 	// Replace sets if provided
 	let setsReplaced = false;
 	if (params.sets !== undefined) {
 		const setInputs = params.sets.map(toSetInput);
-		await replaceSets(db, sessionExerciseId, setInputs);
+		await replaceSets(db, userId, sessionExerciseId, setInputs);
 		setsReplaced = true;
 	}
 
@@ -369,12 +381,13 @@ export async function updateWorkoutHandler(
 
 export async function deleteWorkoutHandler(
 	env: Bindings,
+	userId: number,
 	params: DeleteWorkoutParams,
 ): Promise<DeleteWorkoutResult> {
 	const db = env.DB;
 
 	// Find session by date
-	const session = await getSessionByDate(db, params.date);
+	const session = await getSessionByDate(db, userId, params.date);
 	if (!session) {
 		throw new Error(`No session found for date ${params.date}`);
 	}
@@ -382,7 +395,7 @@ export async function deleteWorkoutHandler(
 	// Delete entire session
 	if (params.delete_entire_session) {
 		try {
-			await deleteSession(env, session.id);
+			await deleteSession(env, userId, session.id);
 		} catch (error) {
 			throw new Error(
 				"写真の削除に失敗したため、セッションは削除されませんでした。時間をおいて再試行してください。",
@@ -393,13 +406,13 @@ export async function deleteWorkoutHandler(
 	}
 
 	// Delete specific exercise
-	const sessionExerciseId = await findSessionExercise(db, session.id, {
+	const sessionExerciseId = await findSessionExercise(db, userId, session.id, {
 		sessionExerciseId: params.session_exercise_id,
 		exerciseName: params.exercise_name,
 		exerciseOrder: params.exercise_order,
 	});
 
-	await deleteSessionExercise(db, sessionExerciseId);
+	await deleteSessionExercise(db, userId, sessionExerciseId);
 
 	return {
 		deleted: "exercise",
@@ -441,7 +454,11 @@ const ExerciseInputSchema = {
 
 // ---- MCP tool registration ----
 
-export function registerWorkoutTools(server: McpServer, env: Bindings): void {
+export function registerWorkoutTools(
+	server: McpServer,
+	env: Bindings,
+	userId: number,
+): void {
 	// log_workout
 	server.registerTool(
 		"log_workout",
@@ -465,7 +482,7 @@ export function registerWorkoutTools(server: McpServer, env: Bindings): void {
 		},
 		async (args) => {
 			try {
-				const result = await logWorkoutHandler(env, args);
+				const result = await logWorkoutHandler(env, userId, args);
 				return {
 					content: [
 						{
@@ -532,7 +549,7 @@ export function registerWorkoutTools(server: McpServer, env: Bindings): void {
 		},
 		async (args) => {
 			try {
-				const result = await updateWorkoutHandler(env, args);
+				const result = await updateWorkoutHandler(env, userId, args);
 				return {
 					content: [
 						{
@@ -591,7 +608,7 @@ export function registerWorkoutTools(server: McpServer, env: Bindings): void {
 		},
 		async (args) => {
 			try {
-				const result = await deleteWorkoutHandler(env, args);
+				const result = await deleteWorkoutHandler(env, userId, args);
 				return {
 					content: [
 						{

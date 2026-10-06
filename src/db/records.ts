@@ -1,3 +1,4 @@
+import { assertSessionOwned } from "./sessions.js";
 import type { SessionExerciseRow, SetRow } from "./types.js";
 
 /** Input for creating or replacing a set */
@@ -18,9 +19,11 @@ export interface SetInput {
 /**
  * Create a session exercise with auto-generated display_order.
  * display_order is assigned as max(display_order) + 1 within the session.
+ * The parent session must belong to the given user.
  */
 export async function createSessionExercise(
 	db: D1Database,
+	userId: number,
 	params: {
 		sessionId: number;
 		exerciseId: number;
@@ -38,6 +41,10 @@ export async function createSessionExercise(
 		formCues = null,
 		notes = null,
 	} = params;
+
+	if (!(await assertSessionOwned(db, userId, sessionId))) {
+		throw new Error("Session not found");
+	}
 
 	// Get next display_order for this session
 	const maxOrder = await db
@@ -74,10 +81,12 @@ export async function createSessionExercise(
 }
 
 /**
- * Update a session exercise. Only specified fields are updated.
+ * Update a session exercise owned by the given user. Only specified fields are updated.
+ * Another user's row is treated as non-existent and returns null.
  */
 export async function updateSessionExercise(
 	db: D1Database,
+	userId: number,
 	id: number,
 	params: {
 		status?: SessionExerciseRow["status"];
@@ -86,10 +95,14 @@ export async function updateSessionExercise(
 		notes?: string | null;
 	},
 ): Promise<SessionExerciseRow | null> {
-	// Fetch existing row to merge with updates
+	// Fetch existing row (scoped to the owner) to merge with updates
 	const existing = await db
-		.prepare("SELECT * FROM session_exercises WHERE id = ?")
-		.bind(id)
+		.prepare(
+			`SELECT se.* FROM session_exercises se
+			 JOIN workout_sessions ws ON se.session_id = ws.id
+			 WHERE se.id = ? AND ws.user_id = ?`,
+		)
+		.bind(id, userId)
 		.first<SessionExerciseRow>();
 	if (!existing) return null;
 
@@ -106,37 +119,68 @@ export async function updateSessionExercise(
 		.prepare(
 			`UPDATE session_exercises
 			 SET status = ?, equipment_note = ?, form_cues = ?, notes = ?
-			 WHERE id = ?`,
+			 WHERE id = ?
+			   AND session_id IN (SELECT id FROM workout_sessions WHERE user_id = ?)`,
 		)
-		.bind(status, equipmentNote, formCues, notes, id)
+		.bind(status, equipmentNote, formCues, notes, id, userId)
 		.run();
 
 	return db
-		.prepare("SELECT * FROM session_exercises WHERE id = ?")
-		.bind(id)
+		.prepare(
+			`SELECT se.* FROM session_exercises se
+			 JOIN workout_sessions ws ON se.session_id = ws.id
+			 WHERE se.id = ? AND ws.user_id = ?`,
+		)
+		.bind(id, userId)
 		.first<SessionExerciseRow>();
 }
 
 /**
- * Delete a session exercise by ID. Returns true if a row was deleted.
- * CASCADE deletes associated sets.
+ * Delete a session exercise by ID owned by the given user. Returns true if a row
+ * was deleted. CASCADE deletes associated sets.
  */
 export async function deleteSessionExercise(
 	db: D1Database,
+	userId: number,
 	id: number,
 ): Promise<boolean> {
 	const result = await db
-		.prepare("DELETE FROM session_exercises WHERE id = ?")
-		.bind(id)
+		.prepare(
+			`DELETE FROM session_exercises
+			 WHERE id = ?
+			   AND session_id IN (SELECT id FROM workout_sessions WHERE user_id = ?)`,
+		)
+		.bind(id, userId)
 		.run();
 	return result.meta.changes > 0;
 }
 
 /**
+ * True when the session exercise exists and its parent session belongs to the user.
+ */
+async function sessionExerciseBelongsToUser(
+	db: D1Database,
+	userId: number,
+	sessionExerciseId: number,
+): Promise<boolean> {
+	const row = await db
+		.prepare(
+			`SELECT 1 AS ok FROM session_exercises se
+			 JOIN workout_sessions ws ON se.session_id = ws.id
+			 WHERE se.id = ? AND ws.user_id = ?`,
+		)
+		.bind(sessionExerciseId, userId)
+		.first<{ ok: number }>();
+	return row !== null;
+}
+
+/**
  * Create a single set with explicit set_order.
+ * The parent session exercise must belong to the given user.
  */
 export async function createSet(
 	db: D1Database,
+	userId: number,
 	params: {
 		sessionExerciseId: number;
 		setOrder: number;
@@ -168,6 +212,10 @@ export async function createSet(
 		angleDegrees = null,
 		notes = null,
 	} = params;
+
+	if (!(await sessionExerciseBelongsToUser(db, userId, sessionExerciseId))) {
+		throw new Error("Session exercise not found");
+	}
 
 	const result = await db
 		.prepare(
@@ -206,6 +254,7 @@ export async function createSet(
 /**
  * Replace all sets for a session exercise (full delete + re-create).
  * set_order is auto-assigned per is_planned group (planned and actual each start from 1).
+ * The parent session exercise must belong to the given user.
  *
  * DELETE and all INSERTs run inside a single db.batch() transaction.
  * If any INSERT fails, the entire batch (including the DELETE) is rolled back,
@@ -213,9 +262,14 @@ export async function createSet(
  */
 export async function replaceSets(
 	db: D1Database,
+	userId: number,
 	sessionExerciseId: number,
 	sets: SetInput[],
 ): Promise<SetRow[]> {
+	if (!(await sessionExerciseBelongsToUser(db, userId, sessionExerciseId))) {
+		throw new Error("Session exercise not found");
+	}
+
 	// Build all statements for a single transactional batch
 	const statements: D1PreparedStatement[] = [
 		db
@@ -273,14 +327,23 @@ export async function replaceSets(
 }
 
 /**
- * Delete all sets for a session exercise.
+ * Delete all sets for a session exercise owned by the given user.
  */
 export async function deleteSetsBySessionExercise(
 	db: D1Database,
+	userId: number,
 	sessionExerciseId: number,
 ): Promise<void> {
 	await db
-		.prepare("DELETE FROM sets WHERE session_exercise_id = ?")
-		.bind(sessionExerciseId)
+		.prepare(
+			`DELETE FROM sets
+			 WHERE session_exercise_id = ?
+			   AND session_exercise_id IN (
+			     SELECT se.id FROM session_exercises se
+			     JOIN workout_sessions ws ON se.session_id = ws.id
+			     WHERE ws.user_id = ?
+			   )`,
+		)
+		.bind(sessionExerciseId, userId)
 		.run();
 }

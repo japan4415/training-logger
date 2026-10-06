@@ -33,23 +33,23 @@ async function seedTestData(): Promise<void> {
 	});
 
 	// Session 1: 2026-08-15
-	const { session: s1 } = await getOrCreateSession(env.DB, {
+	const { session: s1 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-15",
 		goal: "ダイエット",
 	});
-	const se1bench = await createSessionExercise(env.DB, {
+	const se1bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se1bench.id, [
+	await replaceSets(env.DB, 1, se1bench.id, [
 		{ reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ reps: 8, weightValue: 65, weightUnit: "kg" },
 	]);
-	const se1walk = await createSessionExercise(env.DB, {
+	const se1walk = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: walking.id,
 	});
-	await replaceSets(env.DB, se1walk.id, [
+	await replaceSets(env.DB, 1, se1walk.id, [
 		{
 			durationMinutes: 10,
 			speedMin: 3.5,
@@ -59,25 +59,25 @@ async function seedTestData(): Promise<void> {
 	]);
 
 	// Session 2: 2026-08-16
-	const { session: s2 } = await getOrCreateSession(env.DB, {
+	const { session: s2 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-16",
 	});
-	const se2bench = await createSessionExercise(env.DB, {
+	const se2bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s2.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se2bench.id, [
+	await replaceSets(env.DB, 1, se2bench.id, [
 		{ isPlanned: true, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: true, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: false, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: false, reps: 8, weightValue: 70, weightUnit: "kg" },
 		{ isPlanned: false, reps: 6, weightValue: 75, weightUnit: "kg" },
 	]);
-	const se2stretch = await createSessionExercise(env.DB, {
+	const se2stretch = await createSessionExercise(env.DB, 1, {
 		sessionId: s2.id,
 		exerciseId: stretch.id,
 	});
-	await replaceSets(env.DB, se2stretch.id, [{ angleDegrees: 20 }]);
+	await replaceSets(env.DB, 1, se2stretch.id, [{ angleDegrees: 20 }]);
 }
 
 describe("getHistoryHandler", () => {
@@ -91,7 +91,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should return latest 5 sessions by default when no params", async () => {
-		const result = await getHistoryHandler(env, {});
+		const result = await getHistoryHandler(env, 1, {});
 		// We only have 2 sessions, so both should be returned
 		expect(result.sessions).toHaveLength(2);
 		// Descending date order
@@ -100,14 +100,14 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should include session metadata", async () => {
-		const result = await getHistoryHandler(env, {});
+		const result = await getHistoryHandler(env, 1, {});
 		const session = result.sessions.find((s) => s.date === "2026-08-15");
 		expect(session).toBeDefined();
 		expect(session?.goal).toBe("ダイエット");
 	});
 
 	it("should include exercises with sets by default", async () => {
-		const result = await getHistoryHandler(env, {});
+		const result = await getHistoryHandler(env, 1, {});
 		const session = result.sessions[0]; // 2026-08-16
 		expect(session.exercises.length).toBeGreaterThan(0);
 
@@ -117,7 +117,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should format sets correctly", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			exerciseName: "ベンチプレス",
 			lastNSessions: 1,
 		});
@@ -140,7 +140,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should filter by exercise_name (exact match)", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			exerciseName: "ウォーキング",
 		});
 		expect(result.sessions).toHaveLength(1);
@@ -150,7 +150,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should filter by exercise_name via alias", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			exerciseName: "Bench Press",
 		});
 		// ベンチプレス appears in both sessions
@@ -162,14 +162,14 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should return empty sessions for non-existent exercise", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			exerciseName: "存在しない種目",
 		});
 		expect(result.sessions).toHaveLength(0);
 	});
 
 	it("should filter by date range (dateFrom only)", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			dateFrom: "2026-08-16",
 		});
 		expect(result.sessions).toHaveLength(1);
@@ -177,7 +177,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should filter by date range (dateTo only)", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			dateTo: "2026-08-15",
 		});
 		expect(result.sessions).toHaveLength(1);
@@ -185,7 +185,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should filter by date range (both dateFrom and dateTo)", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			dateFrom: "2026-08-15",
 			dateTo: "2026-08-15",
 		});
@@ -194,7 +194,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should limit by lastNSessions", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			lastNSessions: 1,
 		});
 		expect(result.sessions).toHaveLength(1);
@@ -202,7 +202,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should exclude sets when includeSets is false", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			includeSets: false,
 		});
 		expect(result.sessions).toHaveLength(2);
@@ -214,7 +214,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should combine exercise_name and date_from filters", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			exerciseName: "ベンチプレス",
 			dateFrom: "2026-08-16",
 		});
@@ -224,7 +224,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should handle cardio exercise sets correctly", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			exerciseName: "ウォーキング",
 		});
 		expect(result.sessions).toHaveLength(1);
@@ -240,7 +240,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should handle flexibility exercise sets correctly", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			exerciseName: "ストレッチボード",
 		});
 		expect(result.sessions).toHaveLength(1);
@@ -251,7 +251,7 @@ describe("getHistoryHandler", () => {
 	});
 
 	it("should include exercise metadata (category, status, etc.)", async () => {
-		const result = await getHistoryHandler(env, {
+		const result = await getHistoryHandler(env, 1, {
 			exerciseName: "ベンチプレス",
 			lastNSessions: 1,
 		});

@@ -4,6 +4,7 @@ import {
 	getHistory,
 	getSessionDetail,
 } from "../db/queries.js";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import {
 	mergeAtlasAssignments,
 	parseAtlasAssignment,
@@ -74,7 +75,7 @@ export async function listSessions(c: Context<{ Bindings: Bindings }>) {
 	const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
 	// Fetch sessions with exercise info (no sets needed for list)
-	const allDetails = await getHistory(db, {
+	const allDetails = await getHistory(db, DEFAULT_USER_ID, {
 		dateFrom: startDate,
 		dateTo: endDate,
 		includeSets: false,
@@ -109,7 +110,7 @@ export async function getSession(c: Context<{ Bindings: Bindings }>) {
 		return c.json({ error: "Invalid session ID" }, 400);
 	}
 
-	const detail = await getSessionDetail(db, id);
+	const detail = await getSessionDetail(db, DEFAULT_USER_ID, id);
 	if (!detail) {
 		return c.json({ error: "Session not found" }, 404);
 	}

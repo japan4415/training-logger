@@ -1,4 +1,5 @@
 import type { Bindings } from "../env.js";
+import { assertSessionOwned } from "./sessions.js";
 import type { SessionPhotoRow } from "./types.js";
 
 export const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
@@ -42,47 +43,67 @@ export function detectPhotoContentType(
 	return null;
 }
 
+/**
+ * List photo metadata for a session owned by the given user.
+ * Child rows are scoped through a JOIN on the parent workout_sessions row so
+ * another user's photos are treated as non-existent.
+ */
 export async function listSessionPhotos(
 	db: D1Database,
+	userId: number,
 	sessionId: number,
 ): Promise<SessionPhotoRow[]> {
 	const { results } = await db
 		.prepare(
-			"SELECT * FROM session_photos WHERE session_id = ? ORDER BY created_at, id",
+			`SELECT sp.* FROM session_photos sp
+			 JOIN workout_sessions ws ON sp.session_id = ws.id
+			 WHERE sp.session_id = ? AND ws.user_id = ?
+			 ORDER BY sp.created_at, sp.id`,
 		)
-		.bind(sessionId)
+		.bind(sessionId, userId)
 		.all<SessionPhotoRow>();
 	return results;
 }
 
 export async function getSessionPhoto(
 	db: D1Database,
+	userId: number,
 	sessionId: number,
 	photoId: string,
 ): Promise<SessionPhotoRow | null> {
 	return db
-		.prepare("SELECT * FROM session_photos WHERE session_id = ? AND id = ?")
-		.bind(sessionId, photoId)
+		.prepare(
+			`SELECT sp.* FROM session_photos sp
+			 JOIN workout_sessions ws ON sp.session_id = ws.id
+			 WHERE sp.session_id = ? AND sp.id = ? AND ws.user_id = ?`,
+		)
+		.bind(sessionId, photoId, userId)
 		.first<SessionPhotoRow>();
 }
 
 async function deleteSessionPhotoMetadata(
 	db: D1Database,
+	userId: number,
 	sessionId: number,
 	photoId: string,
 ): Promise<void> {
 	await db
-		.prepare("DELETE FROM session_photos WHERE session_id = ? AND id = ?")
-		.bind(sessionId, photoId)
+		.prepare(
+			`DELETE FROM session_photos
+			 WHERE session_id = ? AND id = ?
+			   AND session_id IN (SELECT id FROM workout_sessions WHERE user_id = ?)`,
+		)
+		.bind(sessionId, photoId, userId)
 		.run();
 }
 
 /** Remove metadata for objects already missing from R2 and return usable photos. */
 export async function listExistingSessionPhotos(
 	env: Pick<Bindings, "DB" | "PHOTOS">,
+	userId: number,
 	sessionId: number,
 ): Promise<SessionPhotoRow[]> {
-	const photos = await listSessionPhotos(env.DB, sessionId);
+	const photos = await listSessionPhotos(env.DB, userId, sessionId);
 	const objects = await Promise.all(
 		photos.map(async (photo) => ({
 			photo,
@@ -95,7 +116,7 @@ export async function listExistingSessionPhotos(
 			existing.push(photo);
 			continue;
 		}
-		await deleteSessionPhotoMetadata(env.DB, sessionId, photo.id);
+		await deleteSessionPhotoMetadata(env.DB, userId, sessionId, photo.id);
 		console.warn("Removed session photo metadata for a missing R2 object", {
 			sessionId,
 			photoId: photo.id,
@@ -108,9 +129,10 @@ export async function listExistingSessionPhotos(
 /** Remove one stale metadata row after an R2 miss. */
 export async function removeMissingSessionPhotoMetadata(
 	db: D1Database,
+	userId: number,
 	photo: SessionPhotoRow,
 ): Promise<void> {
-	await deleteSessionPhotoMetadata(db, photo.session_id, photo.id);
+	await deleteSessionPhotoMetadata(db, userId, photo.session_id, photo.id);
 	console.warn("Removed session photo metadata for a missing R2 object", {
 		sessionId: photo.session_id,
 		photoId: photo.id,
@@ -134,8 +156,18 @@ async function compensateR2Put(
 	}
 }
 
+/**
+ * Store a photo for a session owned by the given user.
+ *
+ * The parent session is verified here before anything is written. Callers
+ * usually resolve the session with getSessionById / getSessionByDate, but the
+ * guard is kept so a mis-scoped call cannot insert a child row (and consume one
+ * of the four photo slots) on another user's session. This mirrors the
+ * precondition createSessionExercise enforces with assertSessionOwned.
+ */
 export async function storeSessionPhoto(
 	env: Pick<Bindings, "DB" | "PHOTOS">,
+	userId: number,
 	session: { id: number; session_date: string },
 	bytes: Uint8Array,
 ): Promise<
@@ -145,6 +177,9 @@ export async function storeSessionPhoto(
 			error: "unsupported_type" | "too_large" | "limit_exceeded";
 	  }
 > {
+	if (!(await assertSessionOwned(env.DB, userId, session.id))) {
+		throw new Error("Session not found");
+	}
 	if (bytes.byteLength > PHOTO_MAX_BYTES) {
 		return { ok: false, error: "too_large" };
 	}
@@ -152,7 +187,11 @@ export async function storeSessionPhoto(
 	if (!contentType) return { ok: false, error: "unsupported_type" };
 
 	const id = crypto.randomUUID();
-	const r2Key = `sessions/${session.session_date}/${session.id}/${id}.${EXTENSIONS[contentType]}`;
+	// New objects are namespaced by user. The prefix is NOT an authorization
+	// boundary: access is enforced by verifying session ownership in D1. It only
+	// keeps listings/sweeps from overlapping between users. Legacy objects under
+	// `sessions/...` are kept because r2_key is already stored.
+	const r2Key = `users/${userId}/sessions/${session.session_date}/${session.id}/${id}.${EXTENSIONS[contentType]}`;
 	await env.PHOTOS.put(r2Key, bytes, {
 		httpMetadata: {
 			contentType,
@@ -163,7 +202,7 @@ export async function storeSessionPhoto(
 	try {
 		const result = await env.DB.prepare(
 			`INSERT INTO session_photos
-				(id, session_id, r2_key, content_type, size_bytes)
+			 (id, session_id, r2_key, content_type, size_bytes)
 			 SELECT ?, ?, ?, ?, ?
 			 WHERE (SELECT COUNT(*) FROM session_photos WHERE session_id = ?) < ?`,
 		)
@@ -187,7 +226,7 @@ export async function storeSessionPhoto(
 		throw error;
 	}
 
-	const photo = await getSessionPhoto(env.DB, session.id, id);
+	const photo = await getSessionPhoto(env.DB, userId, session.id, id);
 	if (!photo) {
 		await compensateR2Put(env.PHOTOS, r2Key, "stored row could not be read");
 		throw new Error("Failed to retrieve stored session photo");
@@ -197,50 +236,71 @@ export async function storeSessionPhoto(
 
 export async function deleteSessionPhoto(
 	env: Pick<Bindings, "DB" | "PHOTOS">,
+	userId: number,
 	sessionId: number,
 	photoId: string,
 ): Promise<boolean> {
-	const photo = await getSessionPhoto(env.DB, sessionId, photoId);
+	const photo = await getSessionPhoto(env.DB, userId, sessionId, photoId);
 	if (!photo) return false;
 	await env.PHOTOS.delete(photo.r2_key);
 	const result = await env.DB.prepare(
-		"DELETE FROM session_photos WHERE session_id = ? AND id = ?",
+		`DELETE FROM session_photos
+		 WHERE session_id = ? AND id = ?
+		   AND session_id IN (SELECT id FROM workout_sessions WHERE user_id = ?)`,
 	)
-		.bind(sessionId, photoId)
+		.bind(sessionId, photoId, userId)
 		.run();
 	return result.meta.changes > 0;
 }
 
 export async function deleteSessionPhotosForSession(
 	env: Pick<Bindings, "DB" | "PHOTOS">,
+	userId: number,
 	sessionId: number,
 ): Promise<void> {
-	const photos = await listSessionPhotos(env.DB, sessionId);
+	const photos = await listSessionPhotos(env.DB, userId, sessionId);
 	if (photos.length > 0) {
 		await env.PHOTOS.delete(photos.map((photo) => photo.r2_key));
 	}
 }
 
-/** Best-effort cleanup for objects created concurrently with session deletion. */
+/**
+ * Best-effort cleanup for objects created concurrently with session deletion.
+ * Sweeps both the current user-scoped prefix and the legacy prefix so objects
+ * left by older code paths are removed too.
+ *
+ * Precondition: the caller must have verified that the session belongs to
+ * `userId` (for example through getSessionById) before calling. This function
+ * does not query D1 and cannot detect a mis-scoped call. The legacy
+ * `sessions/{date}/{id}/` prefix predates user namespacing and is not bound to
+ * a user, so only delete a session the user actually owns. The key prefix is
+ * not an authorization boundary; ownership is enforced in D1.
+ */
 export async function sweepSessionPhotoObjects(
 	bucket: R2Bucket,
+	userId: number,
 	sessionDate: string,
 	sessionId: number,
 ): Promise<void> {
-	const prefix = `sessions/${sessionDate}/${sessionId}/`;
-	try {
-		let cursor: string | undefined;
-		do {
-			const listed = await bucket.list({ prefix, cursor });
-			if (listed.objects.length > 0) {
-				await bucket.delete(listed.objects.map((object) => object.key));
-			}
-			cursor = listed.truncated ? listed.cursor : undefined;
-		} while (cursor);
-	} catch (error) {
-		console.error("Failed to sweep session photo R2 objects", {
-			prefix,
-			error,
-		});
+	const prefixes = [
+		`users/${userId}/sessions/${sessionDate}/${sessionId}/`,
+		`sessions/${sessionDate}/${sessionId}/`,
+	];
+	for (const prefix of prefixes) {
+		try {
+			let cursor: string | undefined;
+			do {
+				const listed = await bucket.list({ prefix, cursor });
+				if (listed.objects.length > 0) {
+					await bucket.delete(listed.objects.map((object) => object.key));
+				}
+				cursor = listed.truncated ? listed.cursor : undefined;
+			} while (cursor);
+		} catch (error) {
+			console.error("Failed to sweep session photo R2 objects", {
+				prefix,
+				error,
+			});
+		}
 	}
 }

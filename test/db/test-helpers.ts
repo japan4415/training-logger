@@ -1,10 +1,36 @@
 /**
- * Apply the initial D1 migration to set up tables for testing.
+ * Apply the D1 migrations to set up tables for testing.
+ * Mirrors migrations/0001-0005: users / user_identities plus the workout_sessions
+ * family with `user_id` (UNIQUE(user_id, session_date)).
  * Uses IF NOT EXISTS to be idempotent across test files.
  * Uses db.batch() with individual prepared statements to avoid exec() parsing issues.
  */
 export async function applyMigrations(db: D1Database): Promise<void> {
 	await db.batch([
+		db.prepare(`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+			display_name TEXT,
+			status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+			role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member'))
+		)`),
+		db.prepare(`CREATE TABLE IF NOT EXISTS user_identities (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			provider TEXT NOT NULL,
+			subject TEXT,
+			email TEXT COLLATE NOCASE UNIQUE,
+			UNIQUE (provider, subject),
+			CHECK (subject IS NOT NULL OR email IS NOT NULL)
+		)`),
+		db.prepare(
+			"CREATE INDEX IF NOT EXISTS idx_user_identities_user_id ON user_identities(user_id)",
+		),
+		// Default owner. Existing tests insert workout_sessions without user_id and
+		// rely on `DEFAULT 1` resolving to this row.
+		db.prepare(
+			"INSERT OR IGNORE INTO users (id, display_name, status, role) VALUES (1, NULL, 'active', 'owner')",
+		),
 		db.prepare(`CREATE TABLE IF NOT EXISTS exercises (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -29,12 +55,14 @@ export async function applyMigrations(db: D1Database): Promise<void> {
 		),
 		db.prepare(`CREATE TABLE IF NOT EXISTS workout_sessions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			session_date TEXT NOT NULL UNIQUE,
+			user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+			session_date TEXT NOT NULL,
 			goal TEXT,
 			body_condition TEXT,
 			notes TEXT,
 			created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-			updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+			updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+			UNIQUE (user_id, session_date)
 		)`),
 		db.prepare(
 			"CREATE INDEX IF NOT EXISTS idx_workout_sessions_date ON workout_sessions(session_date)",
@@ -95,6 +123,8 @@ export async function applyMigrations(db: D1Database): Promise<void> {
 /**
  * Clean all data from the database without dropping tables.
  * Deletes in foreign-key-safe order using batch for atomicity.
+ * The default owner user (id 1) is kept so `workout_sessions.user_id DEFAULT 1`
+ * remains valid for tests that insert sessions without an explicit user.
  */
 export async function cleanDatabase(db: D1Database): Promise<void> {
 	await db.batch([
@@ -104,5 +134,10 @@ export async function cleanDatabase(db: D1Database): Promise<void> {
 		db.prepare("DELETE FROM workout_sessions"),
 		db.prepare("DELETE FROM exercise_aliases"),
 		db.prepare("DELETE FROM exercises"),
+		db.prepare("DELETE FROM user_identities"),
+		db.prepare("DELETE FROM users"),
+		db.prepare(
+			"INSERT OR IGNORE INTO users (id, display_name, status, role) VALUES (1, NULL, 'active', 'owner')",
+		),
 	]);
 }

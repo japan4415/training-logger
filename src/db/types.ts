@@ -21,6 +21,7 @@ export interface ExerciseAliasRow {
 /** ワークアウトセッション (workout_sessions テーブル) */
 export interface WorkoutSessionRow {
 	id: number;
+	user_id: number;
 	session_date: string;
 	goal: string | null;
 	body_condition: string | null;

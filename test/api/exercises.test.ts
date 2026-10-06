@@ -31,23 +31,23 @@ async function seedTestData() {
 	});
 
 	// Session 2026-08-15: bench + walking
-	const { session: s1 } = await getOrCreateSession(env.DB, {
+	const { session: s1 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-15",
 		goal: "ダイエット",
 	});
-	const se1bench = await createSessionExercise(env.DB, {
+	const se1bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se1bench.id, [
+	await replaceSets(env.DB, 1, se1bench.id, [
 		{ reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ reps: 8, weightValue: 65, weightUnit: "kg" },
 	]);
-	const se1walk = await createSessionExercise(env.DB, {
+	const se1walk = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: walking.id,
 	});
-	await replaceSets(env.DB, se1walk.id, [
+	await replaceSets(env.DB, 1, se1walk.id, [
 		{
 			durationMinutes: 10,
 			speedMin: 3.5,
@@ -56,14 +56,14 @@ async function seedTestData() {
 	]);
 
 	// Session 2026-08-16: bench with planned + actual (higher weight)
-	const { session: s2 } = await getOrCreateSession(env.DB, {
+	const { session: s2 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-16",
 	});
-	const se2bench = await createSessionExercise(env.DB, {
+	const se2bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s2.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se2bench.id, [
+	await replaceSets(env.DB, 1, se2bench.id, [
 		{ isPlanned: true, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: false, reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ isPlanned: false, reps: 8, weightValue: 70, weightUnit: "kg" },
@@ -71,14 +71,14 @@ async function seedTestData() {
 	]);
 
 	// Session 2026-07-01: bench with lbs
-	const { session: s3 } = await getOrCreateSession(env.DB, {
+	const { session: s3 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-07-01",
 	});
-	const se3bench = await createSessionExercise(env.DB, {
+	const se3bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s3.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se3bench.id, [
+	await replaceSets(env.DB, 1, se3bench.id, [
 		{ reps: 12, weightValue: 100, weightUnit: "lbs" },
 	]);
 

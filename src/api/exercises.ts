@@ -6,6 +6,7 @@ import {
 } from "../db/exercises.js";
 import { getExerciseStats } from "../db/queries.js";
 import type { ExerciseRow } from "../db/types.js";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import { parseAtlasAssignment } from "../domain/atlas.js";
 import type { Bindings } from "../env.js";
 
@@ -41,7 +42,7 @@ export async function listExercises(c: Context<{ Bindings: Bindings }>) {
 	// Enrich each exercise with last_performed and total_sessions
 	const exercises = await Promise.all(
 		exercisesWithAliases.map(async ({ exercise }) => {
-			const stats = await getExerciseStats(db, exercise.id);
+			const stats = await getExerciseStats(db, DEFAULT_USER_ID, exercise.id);
 			return {
 				id: exercise.id,
 				name: exercise.name,

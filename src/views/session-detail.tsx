@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { getSessionDetail } from "../db/queries.js";
 import { listExistingSessionPhotos } from "../db/session-photos.js";
 import { getSessionById } from "../db/sessions.js";
+import { DEFAULT_USER_ID } from "../default-user.js";
 import type { Bindings } from "../env.js";
 import { getSessionAnatomy, MuscleMap } from "./components/muscle-map.js";
 import { formatDateWithDay } from "./components/session-card.js";
@@ -45,7 +46,7 @@ export async function sessionDetailHandler(
 	}
 
 	const db = c.env.DB;
-	const detail = await getSessionDetail(db, id);
+	const detail = await getSessionDetail(db, DEFAULT_USER_ID, id);
 
 	if (!detail) {
 		return c.html(
@@ -56,24 +57,24 @@ export async function sessionDetailHandler(
 		);
 	}
 
-	// Find previous and next sessions for navigation
+	// Find previous and next sessions for navigation (this user only)
 	const prevSession = await db
 		.prepare(
-			"SELECT id, session_date FROM workout_sessions WHERE session_date < ? ORDER BY session_date DESC LIMIT 1",
+			"SELECT id, session_date FROM workout_sessions WHERE user_id = ? AND session_date < ? ORDER BY session_date DESC LIMIT 1",
 		)
-		.bind(detail.session.session_date)
+		.bind(DEFAULT_USER_ID, detail.session.session_date)
 		.first<AdjacentSession>();
 
 	const nextSession = await db
 		.prepare(
-			"SELECT id, session_date FROM workout_sessions WHERE session_date > ? ORDER BY session_date ASC LIMIT 1",
+			"SELECT id, session_date FROM workout_sessions WHERE user_id = ? AND session_date > ? ORDER BY session_date ASC LIMIT 1",
 		)
-		.bind(detail.session.session_date)
+		.bind(DEFAULT_USER_ID, detail.session.session_date)
 		.first<AdjacentSession>();
 
 	const { session, exercises } = detail;
 	const anatomy = getSessionAnatomy(exercises);
-	const photos = await listExistingSessionPhotos(c.env, id);
+	const photos = await listExistingSessionPhotos(c.env, DEFAULT_USER_ID, id);
 
 	return c.html(
 		<Layout title="セッション詳細" activeNav="sessions">
@@ -201,7 +202,7 @@ export async function sessionPhotosHandler(
 		);
 	}
 
-	const session = await getSessionById(c.env.DB, id);
+	const session = await getSessionById(c.env.DB, DEFAULT_USER_ID, id);
 	if (!session) {
 		return c.html(
 			<Layout title="セッション写真" activeNav="sessions">
@@ -211,7 +212,7 @@ export async function sessionPhotosHandler(
 		);
 	}
 
-	const photos = await listExistingSessionPhotos(c.env, id);
+	const photos = await listExistingSessionPhotos(c.env, DEFAULT_USER_ID, id);
 	if (c.req.header("HX-Request") === "true") {
 		return c.html(<SessionPhotos sessionId={id} photos={photos} />);
 	}

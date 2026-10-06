@@ -53,22 +53,22 @@ async function seedTestData(): Promise<{
 	});
 
 	// Session 1: 2026-08-15
-	const { session: s1 } = await getOrCreateSession(env.DB, {
+	const { session: s1 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-15",
 	});
-	const se1bench = await createSessionExercise(env.DB, {
+	const se1bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se1bench.id, [
+	await replaceSets(env.DB, 1, se1bench.id, [
 		{ reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ reps: 8, weightValue: 65, weightUnit: "kg" },
 	]);
-	const se1walk = await createSessionExercise(env.DB, {
+	const se1walk = await createSessionExercise(env.DB, 1, {
 		sessionId: s1.id,
 		exerciseId: walking.id,
 	});
-	await replaceSets(env.DB, se1walk.id, [
+	await replaceSets(env.DB, 1, se1walk.id, [
 		{
 			durationMinutes: 10,
 			speedMin: 3.5,
@@ -78,23 +78,23 @@ async function seedTestData(): Promise<{
 	]);
 
 	// Session 2: 2026-08-16
-	const { session: s2 } = await getOrCreateSession(env.DB, {
+	const { session: s2 } = await getOrCreateSession(env.DB, 1, {
 		sessionDate: "2026-08-16",
 	});
-	const se2bench = await createSessionExercise(env.DB, {
+	const se2bench = await createSessionExercise(env.DB, 1, {
 		sessionId: s2.id,
 		exerciseId: bench.id,
 	});
-	await replaceSets(env.DB, se2bench.id, [
+	await replaceSets(env.DB, 1, se2bench.id, [
 		{ reps: 10, weightValue: 60, weightUnit: "kg" },
 		{ reps: 8, weightValue: 70, weightUnit: "kg" },
 		{ reps: 6, weightValue: 75, weightUnit: "kg" },
 	]);
-	const se2stretch = await createSessionExercise(env.DB, {
+	const se2stretch = await createSessionExercise(env.DB, 1, {
 		sessionId: s2.id,
 		exerciseId: stretch.id,
 	});
-	await replaceSets(env.DB, se2stretch.id, [{ angleDegrees: 20 }]);
+	await replaceSets(env.DB, 1, se2stretch.id, [{ angleDegrees: 20 }]);
 
 	return {
 		benchId: bench.id,

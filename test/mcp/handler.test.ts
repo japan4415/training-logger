@@ -15,7 +15,7 @@ describe("MCP handler", () => {
 	beforeAll(() => applyMigrations(env.DB));
 	beforeEach(async () => {
 		await cleanDatabase(env.DB);
-		const listed = await env.PHOTOS.list({ prefix: "sessions/" });
+		const listed = await env.PHOTOS.list();
 		if (listed.objects.length) {
 			await env.PHOTOS.delete(listed.objects.map((object) => object.key));
 		}
@@ -179,7 +179,7 @@ describe("MCP handler", () => {
 		});
 
 		it("tools/call stores a session photo and returns JSON content", async () => {
-			const { session } = await getOrCreateSession(env.DB, {
+			const { session } = await getOrCreateSession(env.DB, 1, {
 				sessionDate: "2026-09-14",
 			});
 			const response = await SELF.fetch("http://localhost/mcp", {
@@ -219,13 +219,13 @@ describe("MCP handler", () => {
 				content_type: "image/png",
 				size_bytes: 8,
 			});
-			expect(await listSessionPhotos(env.DB, session.id)).toHaveLength(1);
+			expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(1);
 		});
 
 		it.each([392908, 382181, 918483, 789743, 912749, 820855, PHOTO_MAX_BYTES])(
 			"stores %i bytes through JSON-RPC and R2 without altering the photo",
 			async (size) => {
-				const { session } = await getOrCreateSession(env.DB, {
+				const { session } = await getOrCreateSession(env.DB, 1, {
 					sessionDate: "2026-09-14",
 				});
 				const bytes = photoBytes(size);
@@ -258,7 +258,7 @@ describe("MCP handler", () => {
 					size_bytes: size,
 					content_type: "image/jpeg",
 				});
-				const photos = await listSessionPhotos(env.DB, session.id);
+				const photos = await listSessionPhotos(env.DB, 1, session.id);
 				expect(photos).toHaveLength(1);
 				const object = await env.PHOTOS.get(photos[0].r2_key);
 				expect(object).not.toBeNull();
@@ -271,7 +271,7 @@ describe("MCP handler", () => {
 		);
 
 		it("tools/call returns invalid_base64 when data exceeds the character limit", async () => {
-			await getOrCreateSession(env.DB, { sessionDate: "2026-09-14" });
+			await getOrCreateSession(env.DB, 1, { sessionDate: "2026-09-14" });
 			const response = await SELF.fetch("http://localhost/mcp", {
 				method: "POST",
 				headers: {

@@ -29,7 +29,7 @@ describe("workout tools", () => {
 
 	describe("logWorkoutHandler", () => {
 		it("should log a simple workout with explicit date", async () => {
-			const result = await logWorkoutHandler(env, {
+			const result = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -50,7 +50,7 @@ describe("workout tools", () => {
 
 		it("should append exercises when called twice on the same day", async () => {
 			// First call
-			const result1 = await logWorkoutHandler(env, {
+			const result1 = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -61,7 +61,7 @@ describe("workout tools", () => {
 			});
 
 			// Second call - same date, different exercise
-			const result2 = await logWorkoutHandler(env, {
+			const result2 = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -85,7 +85,7 @@ describe("workout tools", () => {
 		});
 
 		it("should auto-register unknown exercises as strength by default", async () => {
-			const result = await logWorkoutHandler(env, {
+			const result = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -103,7 +103,7 @@ describe("workout tools", () => {
 		});
 
 		it("should auto-register exercises with cardio params as cardio", async () => {
-			const result = await logWorkoutHandler(env, {
+			const result = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -127,7 +127,7 @@ describe("workout tools", () => {
 		});
 
 		it("should infer cardio from duration_minutes alone", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -142,7 +142,7 @@ describe("workout tools", () => {
 		});
 
 		it("should use Asia/Tokyo date when date is omitted", async () => {
-			const result = await logWorkoutHandler(env, {
+			const result = await logWorkoutHandler(env, 1, {
 				exercises: [
 					{
 						name: "テスト種目",
@@ -157,7 +157,7 @@ describe("workout tools", () => {
 		});
 
 		it("should correctly handle is_planned boolean to 0/1 conversion", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -205,7 +205,7 @@ describe("workout tools", () => {
 		});
 
 		it("should handle weight -> weight_value mapping correctly", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -229,7 +229,7 @@ describe("workout tools", () => {
 
 		it("should not auto-register an already registered exercise", async () => {
 			// First call auto-registers
-			const result1 = await logWorkoutHandler(env, {
+			const result1 = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -241,7 +241,7 @@ describe("workout tools", () => {
 			expect(result1.auto_registered).toContain("既存種目");
 
 			// Second call should find existing
-			const result2 = await logWorkoutHandler(env, {
+			const result2 = await logWorkoutHandler(env, 1, {
 				date: "2026-08-16",
 				exercises: [
 					{
@@ -254,7 +254,7 @@ describe("workout tools", () => {
 		});
 
 		it("should save session metadata (goal, body_condition, session_notes)", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				goal: "ダイエット",
 				body_condition: "良好",
@@ -267,7 +267,7 @@ describe("workout tools", () => {
 				],
 			});
 
-			const session = await getSessionByDate(env.DB, "2026-08-15");
+			const session = await getSessionByDate(env.DB, 1, "2026-08-15");
 			expect(session?.goal).toBe("ダイエット");
 			expect(session?.body_condition).toBe("良好");
 			expect(session?.notes).toBe("テストメモ");
@@ -275,7 +275,7 @@ describe("workout tools", () => {
 
 		it("should update session metadata when appending to existing session", async () => {
 			// First call creates session without goal
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -286,7 +286,7 @@ describe("workout tools", () => {
 			});
 
 			// Second call provides goal
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				goal: "筋力アップ",
 				exercises: [
@@ -297,12 +297,12 @@ describe("workout tools", () => {
 				],
 			});
 
-			const session = await getSessionByDate(env.DB, "2026-08-15");
+			const session = await getSessionByDate(env.DB, 1, "2026-08-15");
 			expect(session?.goal).toBe("筋力アップ");
 		});
 
 		it("should save exercise-level metadata", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -333,7 +333,7 @@ describe("workout tools", () => {
 		});
 
 		it("should handle multiple exercises in a single call", async () => {
-			const result = await logWorkoutHandler(env, {
+			const result = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -368,7 +368,7 @@ describe("workout tools", () => {
 
 	describe("updateWorkoutHandler", () => {
 		it("should update exercise metadata by name", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -378,7 +378,7 @@ describe("workout tools", () => {
 				],
 			});
 
-			const result = await updateWorkoutHandler(env, {
+			const result = await updateWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercise_name: "ベンチプレス",
 				equipment_note: "バーベル",
@@ -391,7 +391,7 @@ describe("workout tools", () => {
 		});
 
 		it("should replace sets when provided", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -404,7 +404,7 @@ describe("workout tools", () => {
 				],
 			});
 
-			const result = await updateWorkoutHandler(env, {
+			const result = await updateWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercise_name: "ベンチプレス",
 				sets: [
@@ -434,7 +434,7 @@ describe("workout tools", () => {
 
 		it("should error when date has no session", async () => {
 			await expect(
-				updateWorkoutHandler(env, {
+				updateWorkoutHandler(env, 1, {
 					date: "2099-01-01",
 					exercise_name: "ベンチプレス",
 				}),
@@ -442,7 +442,7 @@ describe("workout tools", () => {
 		});
 
 		it("should error when exercise name not found in session", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -453,7 +453,7 @@ describe("workout tools", () => {
 			});
 
 			await expect(
-				updateWorkoutHandler(env, {
+				updateWorkoutHandler(env, 1, {
 					date: "2026-08-15",
 					exercise_name: "存在しない種目",
 				}),
@@ -462,7 +462,7 @@ describe("workout tools", () => {
 
 		it("should require exercise_order when same-name exercises exist", async () => {
 			// Log same exercise twice (e.g., walking at start and end)
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -478,7 +478,7 @@ describe("workout tools", () => {
 
 			// Should fail without exercise_order
 			await expect(
-				updateWorkoutHandler(env, {
+				updateWorkoutHandler(env, 1, {
 					date: "2026-08-15",
 					exercise_name: "ウォーキング",
 					notes: "更新テスト",
@@ -486,7 +486,7 @@ describe("workout tools", () => {
 			).rejects.toThrow("Multiple entries");
 
 			// Should succeed with exercise_order
-			const result = await updateWorkoutHandler(env, {
+			const result = await updateWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercise_name: "ウォーキング",
 				exercise_order: 2,
@@ -497,7 +497,7 @@ describe("workout tools", () => {
 		});
 
 		it("should update by session_exercise_id directly", async () => {
-			const logResult = await logWorkoutHandler(env, {
+			const logResult = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -514,7 +514,7 @@ describe("workout tools", () => {
 				.bind(logResult.session_id)
 				.all<{ id: number }>();
 
-			const result = await updateWorkoutHandler(env, {
+			const result = await updateWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				session_exercise_id: results[0].id,
 				status: "skipped",
@@ -526,7 +526,7 @@ describe("workout tools", () => {
 
 	describe("deleteWorkoutHandler", () => {
 		it("should delete entire session", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -540,32 +540,33 @@ describe("workout tools", () => {
 				],
 			});
 
-			const result = await deleteWorkoutHandler(env, {
+			const result = await deleteWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				delete_entire_session: true,
 			});
 
 			expect(result.deleted).toBe("session");
 
-			const session = await getSessionByDate(env.DB, "2026-08-15");
+			const session = await getSessionByDate(env.DB, 1, "2026-08-15");
 			expect(session).toBeNull();
 		});
 
 		it("should delete linked R2 photos through delete_workout", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [{ name: "ベンチプレス", sets: [{ reps: 10 }] }],
 			});
-			const session = await getSessionByDate(env.DB, "2026-08-15");
+			const session = await getSessionByDate(env.DB, 1, "2026-08-15");
 			if (!session) throw new Error("session not found");
 			const stored = await storeSessionPhoto(
 				env,
+				1,
 				session,
 				new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
 			);
 			if (!stored.ok) throw new Error(stored.error);
 
-			await deleteWorkoutHandler(env, {
+			await deleteWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				delete_entire_session: true,
 			});
@@ -574,14 +575,15 @@ describe("workout tools", () => {
 		});
 
 		it("reports an actionable error when R2 photo deletion fails", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [{ name: "ベンチプレス", sets: [{ reps: 10 }] }],
 			});
-			const session = await getSessionByDate(env.DB, "2026-08-15");
+			const session = await getSessionByDate(env.DB, 1, "2026-08-15");
 			if (!session) throw new Error("session not found");
 			const stored = await storeSessionPhoto(
 				env,
+				1,
 				session,
 				new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
 			);
@@ -593,22 +595,19 @@ describe("workout tools", () => {
 			} as unknown as R2Bucket;
 
 			await expect(
-				deleteWorkoutHandler(
-					{ ...env, PHOTOS: failingPhotos },
-					{
-						date: "2026-08-15",
-						delete_entire_session: true,
-					},
-				),
+				deleteWorkoutHandler({ ...env, PHOTOS: failingPhotos }, 1, {
+					date: "2026-08-15",
+					delete_entire_session: true,
+				}),
 			).rejects.toThrow(
 				"写真の削除に失敗したため、セッションは削除されませんでした",
 			);
-			expect(await getSessionByDate(env.DB, "2026-08-15")).not.toBeNull();
+			expect(await getSessionByDate(env.DB, 1, "2026-08-15")).not.toBeNull();
 			await env.PHOTOS.delete(stored.photo.r2_key);
 		});
 
 		it("should delete specific exercise by name", async () => {
-			const logResult = await logWorkoutHandler(env, {
+			const logResult = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -622,7 +621,7 @@ describe("workout tools", () => {
 				],
 			});
 
-			const result = await deleteWorkoutHandler(env, {
+			const result = await deleteWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercise_name: "ベンチプレス",
 			});
@@ -631,7 +630,7 @@ describe("workout tools", () => {
 			expect(result.exercise_name).toBe("ベンチプレス");
 
 			// Session should still exist
-			const session = await getSessionByDate(env.DB, "2026-08-15");
+			const session = await getSessionByDate(env.DB, 1, "2026-08-15");
 			expect(session).not.toBeNull();
 
 			// Only squat should remain
@@ -645,7 +644,7 @@ describe("workout tools", () => {
 
 		it("should error when date has no session", async () => {
 			await expect(
-				deleteWorkoutHandler(env, {
+				deleteWorkoutHandler(env, 1, {
 					date: "2099-01-01",
 					delete_entire_session: true,
 				}),
@@ -653,7 +652,7 @@ describe("workout tools", () => {
 		});
 
 		it("should cascade delete sets when deleting exercise", async () => {
-			await logWorkoutHandler(env, {
+			await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -666,7 +665,7 @@ describe("workout tools", () => {
 				],
 			});
 
-			await deleteWorkoutHandler(env, {
+			await deleteWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercise_name: "ベンチプレス",
 			});
@@ -678,7 +677,7 @@ describe("workout tools", () => {
 		});
 
 		it("should delete exercise by session_exercise_id", async () => {
-			const logResult = await logWorkoutHandler(env, {
+			const logResult = await logWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				exercises: [
 					{
@@ -694,12 +693,83 @@ describe("workout tools", () => {
 				.bind(logResult.session_id)
 				.all<{ id: number }>();
 
-			const result = await deleteWorkoutHandler(env, {
+			const result = await deleteWorkoutHandler(env, 1, {
 				date: "2026-08-15",
 				session_exercise_id: results[0].id,
 			});
 
 			expect(result.deleted).toBe("exercise");
+		});
+	});
+
+	describe("cross-user isolation", () => {
+		beforeEach(async () => {
+			await env.DB.prepare(
+				"INSERT INTO users (id, display_name, status, role) VALUES (2, NULL, 'active', 'member')",
+			).run();
+		});
+
+		it("does not let a user update or delete another user's workout by date", async () => {
+			await logWorkoutHandler(env, 2, {
+				date: "2026-08-16",
+				exercises: [{ name: "スクワット", sets: [{ reps: 10 }] }],
+			});
+
+			await expect(
+				updateWorkoutHandler(env, 1, {
+					date: "2026-08-16",
+					exercise_name: "スクワット",
+					notes: "越境更新",
+				}),
+			).rejects.toThrow("No session found");
+
+			await expect(
+				deleteWorkoutHandler(env, 1, {
+					date: "2026-08-16",
+					delete_entire_session: true,
+				}),
+			).rejects.toThrow("No session found");
+
+			expect(await getSessionByDate(env.DB, 2, "2026-08-16")).not.toBeNull();
+		});
+
+		it("does not let a user target another user's session_exercise_id", async () => {
+			const loggedB = await logWorkoutHandler(env, 2, {
+				date: "2026-08-16",
+				exercises: [{ name: "スクワット", sets: [{ reps: 10 }] }],
+			});
+			const { results } = await env.DB.prepare(
+				"SELECT id FROM session_exercises WHERE session_id = ?",
+			)
+				.bind(loggedB.session_id)
+				.all<{ id: number }>();
+
+			// User A has its own session on the same date, but must not reach B's row.
+			await logWorkoutHandler(env, 1, {
+				date: "2026-08-16",
+				exercises: [{ name: "ベンチプレス", sets: [{ reps: 5 }] }],
+			});
+
+			await expect(
+				updateWorkoutHandler(env, 1, {
+					date: "2026-08-16",
+					session_exercise_id: results[0].id,
+					status: "skipped",
+				}),
+			).rejects.toThrow("not found in this session");
+		});
+
+		it("keeps two users' logs on the same date separate", async () => {
+			const loggedA = await logWorkoutHandler(env, 1, {
+				date: "2026-08-16",
+				exercises: [{ name: "ベンチプレス", sets: [{ reps: 10, weight: 60 }] }],
+			});
+			const loggedB = await logWorkoutHandler(env, 2, {
+				date: "2026-08-16",
+				exercises: [{ name: "スクワット", sets: [{ reps: 10, weight: 100 }] }],
+			});
+
+			expect(loggedA.session_id).not.toBe(loggedB.session_id);
 		});
 	});
 });
