@@ -29,12 +29,10 @@
     }
   ],
   // OAuth 2.1 の grant / token / client を保存する KV。
-  // TODO(人手): 本番の namespace id に置き換える。この環境からは作成できない
-  // （`wrangler kv namespace create OAUTH_KV` を実行し、返った id をここに書く）。
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",
-      "id": "REPLACE_WITH_OAUTH_KV_NAMESPACE_ID"
+      "id": "6bfe4841510f4c56b4c12db5a6edb362"
     }
   ],
   // Observability: console.log/error の出力とリクエストトレースを有効化
