@@ -94,20 +94,24 @@ CREATE TABLE session_photos_new (
 -- 通常の INSERT/DELETE だけで高水位を引き継げる。sqlite_sequence は直接書き換えない
 -- (本番 D1 での書き込み可否に依存しない)。一時行は NOT NULL を満たす番兵値で作り、
 -- 外部キーは defer_foreign_keys で commit まで遅延させ、commit 前に必ず削除する。
+--
+-- 一時行の削除は id で照合せず *_new を全件 DELETE する。この時点の *_new には上の
+-- 一時行しか入っておらず、実データのコピーはこの後なので全件削除で失うものはない。
+-- seq が NULL (sqlite_sequence を手で書き換えた場合) だと id = (SELECT seq ...) は
+-- NULL と比較されて一時行を消せず、番兵行 (workout_sessions の '0000-00-00' など) が
+-- 残ったまま commit され得る。全件削除なら採番位置の引き継ぎは INSERT 時の
+-- AUTOINCREMENT だけで完結し、この経路でも番兵行が残らない。
 INSERT INTO workout_sessions_new (id, user_id, session_date)
     SELECT seq, 1, '0000-00-00' FROM sqlite_sequence WHERE name = 'workout_sessions';
-DELETE FROM workout_sessions_new
-    WHERE id = (SELECT seq FROM sqlite_sequence WHERE name = 'workout_sessions');
+DELETE FROM workout_sessions_new;
 
 INSERT INTO session_exercises_new (id, session_id, exercise_id, display_order)
     SELECT seq, -1, -1, -1 FROM sqlite_sequence WHERE name = 'session_exercises';
-DELETE FROM session_exercises_new
-    WHERE id = (SELECT seq FROM sqlite_sequence WHERE name = 'session_exercises');
+DELETE FROM session_exercises_new;
 
 INSERT INTO sets_new (id, session_exercise_id, set_order)
     SELECT seq, -1, -1 FROM sqlite_sequence WHERE name = 'sets';
-DELETE FROM sets_new
-    WHERE id = (SELECT seq FROM sqlite_sequence WHERE name = 'sets');
+DELETE FROM sets_new;
 
 -- id を保持して親 -> 子の順にコピーする。
 INSERT INTO workout_sessions_new (id, user_id, session_date, goal, body_condition, notes, created_at, updated_at)

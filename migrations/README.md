@@ -72,7 +72,7 @@ SQLite ではテーブル定義の一部（カラム削除、`UNIQUE` 変更な�
 
 ### AUTOINCREMENT の採番位置
 
-`DROP TABLE` は旧テーブルの `sqlite_sequence` 行も消すため、`*_new` 側の採番位置はコピーした `MAX(id)` まで下がる。末尾で削除した id が再利用されると、期限の無い `/sessions/:id` リンクや古い id を保持するクライアントが別セッションを指し得る。0005 は旧 `sqlite_sequence` の値と同じ id の一時行を `*_new` へ 1 行だけ `INSERT` してすぐ `DELETE` することで、通常の AUTOINCREMENT の仕組みで高水位だけを引き継ぐ（`DELETE` では採番位置は下がらない）。`sqlite_sequence` は直接書き換えないため、本番 D1 での書き込み可否に依存しない。
+`DROP TABLE` は旧テーブルの `sqlite_sequence` 行も消すため、`*_new` 側の採番位置はコピーした `MAX(id)` まで下がる。末尾で削除した id が再利用されると、期限の無い `/sessions/:id` リンクや古い id を保持するクライアントが別セッションを指し得る。0005 は旧 `sqlite_sequence` の値と同じ id の一時行を `*_new` へ 1 行だけ `INSERT` してすぐ `DELETE` することで、通常の AUTOINCREMENT の仕組みで高水位だけを引き継ぐ（`DELETE` では採番位置は下がらない）。`sqlite_sequence` は直接書き換えないため、本番 D1 での書き込み可否に依存しない。一時行の削除は `*_new` の全件 `DELETE` で行う（この時点の `*_new` には一時行しか無い）。`seq` が `NULL` のときに `id = (SELECT seq ...)` で照合すると一時行を消せず番兵行が残るため、全件削除にしてこの経路でも番兵行が残らないようにしている。
 
 `test/db/migration-0005.test.ts` が 0001〜0004 相当のデータを投入して実際の SQL を適用し、件数・ID・`PRAGMA foreign_key_check`・CASCADE・複合 `UNIQUE`・削除済み id が再利用されないことを検証する。同種の再構築を追加するときは、この形でデータ入りの migration テストも併せて追加する。
 
@@ -81,9 +81,24 @@ SQLite ではテーブル定義の一部（カラム削除、`UNIQUE` 変更な�
 `0005` は 4 テーブルを再構築する変更のため、本番へ適用する前に次の順で進める。`--remote` の操作は人手で実施する（自動作業環境からは実行しない）。実データや Time Travel bookmark の具体値はドキュメントへ書かない。
 
 1. **退避**: `pnpm exec wrangler d1 export training-logger-db --remote --output <退避ファイル>` で現行データを退避し、Time Travel の現在の bookmark を控える。
-2. **リハーサル**: 手順 1 の export をローカルの D1 へ投入し、`pnpm exec wrangler d1 migrations apply training-logger-db --local` で `0005` の適用を事前確認する。
+2. **リハーサル**: 手順 1 の export を、既存の `.wrangler` state と衝突しない空の専用ディレクトリへ投入してから `0005` を適用する。通常のローカル開発用 state を汚さないよう、`--persist-to` に空のディレクトリを指定する。
+   ```bash
+   # <リハーサル用ディレクトリ> は空のまま用意する（既存の .wrangler/state は使わない）。
+   mkdir -p <リハーサル用ディレクトリ>
+   pnpm exec wrangler d1 execute training-logger-db --local \
+     --persist-to <リハーサル用ディレクトリ> --file <退避ファイル>
+   pnpm exec wrangler d1 migrations apply training-logger-db --local \
+     --persist-to <リハーサル用ディレクトリ>
+   ```
+   適用前後で件数・`PRAGMA foreign_key_check`・`sqlite_sequence`（下記の確認クエリ）を比較する。
 3. **本番適用**: `pnpm exec wrangler d1 migrations apply training-logger-db --remote` を実行する。
-4. **確認**: 適用後に `workout_sessions` / `session_exercises` / `sets` / `session_photos` の件数が適用前と一致すること、`PRAGMA foreign_key_check` が空であることを確認する。
+4. **確認**: 適用後に `workout_sessions` / `session_exercises` / `sets` / `session_photos` の件数が適用前と一致すること、`PRAGMA foreign_key_check` が空であること、`workout_sessions` / `session_exercises` / `sets` の `sqlite_sequence.seq` が適用前後で一致することを確認する。`seq` が減っていると、再構築前に削除済みの id が再び使われ得る。
+   ```bash
+   # 適用前と適用後の両方で実行し、値が一致することを確認する
+   pnpm exec wrangler d1 execute training-logger-db --remote \
+     --command "SELECT name, seq FROM sqlite_sequence WHERE name IN ('workout_sessions','session_exercises','sets') ORDER BY name"
+   ```
+   手順 2 のリハーサルでは `--local --persist-to <リハーサル用ディレクトリ>` に置き換えて同じクエリを実行し、適用前後で比較する。
 5. **失敗時**: `0005` は 1 つのバッチ（1 トランザクション）で実行され、失敗しても `d1_migrations` には記録されないため、原因を修正してそのまま再実行できる。データに異常が出た場合は手順 1 で控えた Time Travel bookmark へ restore する。
 
 ## 注意事項

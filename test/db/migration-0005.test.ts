@@ -150,6 +150,35 @@ async function countRows(table: string): Promise<number> {
 	return row?.count ?? -1;
 }
 
+async function countRowsWhere(
+	table: string,
+	condition: string,
+): Promise<number> {
+	const row = await env.DB.prepare(
+		`SELECT COUNT(*) AS count FROM ${table} WHERE ${condition}`,
+	).first<{ count: number }>();
+	return row?.count ?? -1;
+}
+
+/** Read one function's AUTOINCREMENT high-water mark (null when absent or NULL). */
+async function sequenceFor(name: string): Promise<number | null> {
+	const row = await env.DB.prepare(
+		"SELECT seq FROM sqlite_sequence WHERE name = ?",
+	)
+		.bind(name)
+		.first<{ seq: number | null }>();
+	return row?.seq ?? null;
+}
+
+async function sequences(): Promise<
+	Array<{ name: string; seq: number | null }>
+> {
+	const { results } = await env.DB.prepare(
+		"SELECT name, seq FROM sqlite_sequence WHERE name IN ('workout_sessions', 'session_exercises', 'sets') ORDER BY name",
+	).all<{ name: string; seq: number | null }>();
+	return results;
+}
+
 interface SchemaObject {
 	type: string;
 	name: string;
@@ -782,6 +811,126 @@ describe("migration 0005 (users and user data isolation)", () => {
 			.bind("2099-01-01")
 			.run();
 		expect(Number(inserted.meta.last_row_id)).toBeGreaterThan(30);
+	});
+
+	it("rebuilds an empty database while keeping the sequence high-water marks", async () => {
+		// Deleting every row keeps the sqlite_sequence rows (only DROP removes them).
+		await env.DB.prepare("DELETE FROM workout_sessions").run();
+		expect(await countRows("workout_sessions")).toBe(0);
+		expect(await countRows("session_exercises")).toBe(0);
+		expect(await countRows("sets")).toBe(0);
+		const beforeSequences = await sequences();
+		expect(beforeSequences).toEqual([
+			{ name: "session_exercises", seq: 16 },
+			{ name: "sets", seq: 3 },
+			{ name: "workout_sessions", seq: 5 },
+		]);
+
+		await execMigration(migration0005);
+
+		expect(await countRows("workout_sessions")).toBe(0);
+		expect(await countRows("session_exercises")).toBe(0);
+		expect(await countRows("sets")).toBe(0);
+		expect(await sequences()).toEqual(beforeSequences);
+		expect(
+			await countRowsWhere("workout_sessions", "session_date = '0000-00-00'"),
+		).toBe(0);
+
+		const inserted = await env.DB.prepare(
+			"INSERT INTO workout_sessions (session_date) VALUES (?)",
+		)
+			.bind("2099-02-02")
+			.run();
+		expect(Number(inserted.meta.last_row_id)).toBeGreaterThan(5);
+	});
+
+	it("keeps the sequence when it already equals MAX(id)", async () => {
+		const maxSessions = (
+			await env.DB.prepare(
+				"SELECT MAX(id) AS max FROM workout_sessions",
+			).first<{ max: number }>()
+		)?.max;
+		expect(maxSessions).toBe(5);
+		expect(await sequenceFor("workout_sessions")).toBe(maxSessions);
+
+		await execMigration(migration0005);
+
+		expect(await sequenceFor("workout_sessions")).toBe(maxSessions);
+		expect(
+			await countRowsWhere("workout_sessions", "session_date = '0000-00-00'"),
+		).toBe(0);
+		const inserted = await env.DB.prepare(
+			"INSERT INTO workout_sessions (session_date) VALUES (?)",
+		)
+			.bind("2099-02-03")
+			.run();
+		expect(Number(inserted.meta.last_row_id)).toBe((maxSessions ?? 0) + 1);
+	});
+
+	it("rolls back the whole migration when a trailing statement fails", async () => {
+		const rebuiltTables = [
+			"workout_sessions",
+			"session_exercises",
+			"sets",
+			"session_photos",
+		] as const;
+		const countsBefore = await Promise.all(
+			rebuiltTables.map(
+				async (table) => [table, await countRows(table)] as const,
+			),
+		);
+		const sequencesBefore = await sequences();
+		const sessionsBefore = (
+			await env.DB.prepare(
+				"SELECT id, session_date, goal FROM workout_sessions ORDER BY id",
+			).all()
+		).results;
+
+		// The appended statement prepares but fails at execution (CHECK), so the
+		// batch must roll the whole migration back.
+		const failing = `${migration0005}
+INSERT INTO users (id, status) VALUES (100, 'bogus');`;
+		await expect(execMigration(failing)).rejects.toThrow();
+
+		expect(
+			await Promise.all(
+				rebuiltTables.map(
+					async (table) => [table, await countRows(table)] as const,
+				),
+			),
+		).toEqual(countsBefore);
+		expect(await sequences()).toEqual(sequencesBefore);
+		expect(
+			(
+				await env.DB.prepare(
+					"SELECT id, session_date, goal FROM workout_sessions ORDER BY id",
+				).all()
+			).results,
+		).toEqual(sessionsBefore);
+		expect(
+			(await env.DB.prepare("PRAGMA foreign_key_check").all()).results,
+		).toEqual([]);
+	});
+
+	it("does not leave a sentinel row when sqlite_sequence.seq is NULL", async () => {
+		await env.DB.prepare(
+			"UPDATE sqlite_sequence SET seq = NULL WHERE name IN ('workout_sessions', 'session_exercises', 'sets')",
+		).run();
+		expect(await sequenceFor("workout_sessions")).toBeNull();
+
+		await execMigration(migration0005);
+
+		expect(
+			await countRowsWhere("workout_sessions", "session_date = '0000-00-00'"),
+		).toBe(0);
+		expect(await countRowsWhere("session_exercises", "id = -1")).toBe(0);
+		expect(await countRowsWhere("sets", "id = -1")).toBe(0);
+		expect(await countRows("workout_sessions")).toBe(3);
+		expect(await countRows("session_exercises")).toBe(4);
+		expect(await countRows("sets")).toBe(3);
+		expect(
+			(await env.DB.prepare("PRAGMA foreign_key_check").all()).results,
+		).toEqual([]);
 	});
 
 	it("keeps the test-helpers DDL in sync with the real migrations", async () => {
