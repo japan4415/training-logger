@@ -12,12 +12,17 @@ type FetchFn = typeof fetch;
  * deny-by-default のため、ここに載っていないパスはすべて Cloudflare Access
  * JWT を必須にする。パスは列挙ではなく「公開パス以外は必須」で判定する。
  *
- *   - `/mcp`            … Phase 4 で OAuth を付けるまで現状維持。
+ *   - `/oauth/*`        … OAuth の token / revocation / 登録エンドポイント。
+ *   - `/.well-known/*`  … AS metadata / protected resource metadata（RFC 8414 / 9728）。
  *   - `/skills/*`       … 配布用 Skill（静的ファイル）。
  *   - 静的アセット       … CSS / JS / 3D モデル / favicon など。
+ *
+ * `/mcp` は OAuthProvider が access token 必須で処理するため、このミドルウェアには
+ * 到達しない。`/authorize` はここに載せず Access JWT 必須のままにする。
  */
 const PUBLIC_PATH_PREFIXES = [
-	"/mcp",
+	"/oauth",
+	"/.well-known",
 	"/skills",
 	"/css",
 	"/js",
@@ -102,6 +107,7 @@ export function registerAccessAuth(
 		// 本番ではこの分岐に入らない（authenticateAccessUser が 401 を返す）。
 		if (auth.user === null) {
 			c.set("userId", DEFAULT_USER_ID);
+			c.set("accessSubject", "local-development");
 			await next();
 			return;
 		}
@@ -123,6 +129,7 @@ export function registerAccessAuth(
 		}
 
 		c.set("userId", resolution.userId);
+		c.set("accessSubject", subject);
 		await next();
 	});
 }

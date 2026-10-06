@@ -68,6 +68,8 @@ function echoApp(fetchFn: typeof fetch) {
 	app.get("/api/sessions", (c) => c.json({ userId: c.get("userId") }));
 	app.post("/api/sessions", (c) => c.json({ userId: c.get("userId") }));
 	app.get("/mcp", (c) => c.text("mcp"));
+	app.get("/oauth/token", (c) => c.text("token"));
+	app.get("/.well-known/oauth-authorization-server", (c) => c.text("metadata"));
 	app.get("/skills/log-workout/SKILL.md", (c) => c.text("skill"));
 	app.get("/css/style.css", (c) => c.text("css"));
 	app.get("/js/chart-init.js", (c) => c.text("js"));
@@ -211,10 +213,11 @@ describe("Web / REST Access middleware", () => {
 	});
 
 	describe("public paths", () => {
-		it("lets /mcp, /skills, static assets and /favicon.ico through without a JWT", async () => {
+		it("lets OAuth endpoints, /skills, static assets and /favicon.ico through without a JWT", async () => {
 			const app = echoApp(jwksFetch());
 			for (const path of [
-				"/mcp",
+				"/oauth/token",
+				"/.well-known/oauth-authorization-server",
 				"/skills/log-workout/SKILL.md",
 				"/css/style.css",
 				"/js/chart-init.js",
@@ -226,9 +229,17 @@ describe("Web / REST Access middleware", () => {
 			}
 		});
 
+		it("requires a JWT for /mcp and /authorize at the middleware level", async () => {
+			const app = echoApp(jwksFetch());
+			for (const path of ["/mcp", "/authorize"]) {
+				const response = await app.request(path, {}, accessBindings());
+				expect(response.status).toBe(401);
+			}
+		});
+
 		it("normalizes public paths without turning protected ones public", async () => {
 			const app = echoApp(jwksFetch());
-			for (const path of ["//mcp", "/MCP", "/mcp/"]) {
+			for (const path of ["//oauth/token", "/OAUTH/token", "/oauth/token/"]) {
 				const response = await app.request(path, {}, accessBindings());
 				expect(response.status).not.toBe(401);
 			}
@@ -251,7 +262,7 @@ describe("Web / REST Access middleware", () => {
 
 		it("does not fetch JWKS for public paths", async () => {
 			const fetchFn = jwksFetch();
-			await echoApp(fetchFn).request("/mcp", {}, accessBindings());
+			await echoApp(fetchFn).request("/oauth/token", {}, accessBindings());
 			expect(fetchFn).not.toHaveBeenCalled();
 		});
 	});

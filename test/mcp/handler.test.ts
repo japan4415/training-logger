@@ -1,4 +1,4 @@
-import { env, SELF } from "cloudflare:test";
+import { env } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
 	listSessionPhotos,
@@ -6,10 +6,46 @@ import {
 	PHOTO_MAX_BYTES,
 } from "../../src/db/session-photos.js";
 import { getOrCreateSession } from "../../src/db/sessions.js";
+import {
+	type McpApiContext,
+	mcpApiHandler,
+} from "../../src/oauth/api-handler.js";
+import { MCP_RESOURCE } from "../../src/oauth/config.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 import { photoBase64, photoBytes } from "../fixtures/photos.js";
 
 const PNG_BASE64 = "iVBORw0KGgo=";
+
+/** `/mcp` の apiHandler を、OAuth ライブラリを通さず偽の ctx で直接呼ぶ。 */
+function mcpContext(
+	userId: number,
+	scope: string[] = ["mcp:read", "mcp:write"],
+): McpApiContext {
+	return {
+		props: { userId },
+		auth: {
+			token: "test-token",
+			audience: MCP_RESOURCE,
+			scope,
+			userId: String(userId),
+			clientId: "test-client",
+		},
+		waitUntil() {},
+		passThroughOnException() {},
+	} as unknown as McpApiContext;
+}
+
+function mcpFetch(
+	init: RequestInit,
+	userId = 1,
+	scope: string[] = ["mcp:read", "mcp:write"],
+): Promise<Response> {
+	return mcpApiHandler.fetch(
+		new Request("http://localhost/mcp", init),
+		env,
+		mcpContext(userId, scope),
+	);
+}
 
 describe("MCP handler", () => {
 	beforeAll(() => applyMigrations(env.DB));
@@ -23,7 +59,7 @@ describe("MCP handler", () => {
 
 	describe("POST /mcp", () => {
 		it("initialize returns a valid JSON-RPC response", async () => {
-			const response = await SELF.fetch("http://localhost/mcp", {
+			const response = await mcpFetch({
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -65,7 +101,7 @@ describe("MCP handler", () => {
 		});
 
 		it("tools/list returns all 11 tools", async () => {
-			const response = await SELF.fetch("http://localhost/mcp", {
+			const response = await mcpFetch({
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -135,7 +171,7 @@ describe("MCP handler", () => {
 		});
 
 		it("tools/call executes create_feedback and returns pre-filled URL when token is unset", async () => {
-			const response = await SELF.fetch("http://localhost/mcp", {
+			const response = await mcpFetch({
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -182,7 +218,7 @@ describe("MCP handler", () => {
 			const { session } = await getOrCreateSession(env.DB, 1, {
 				sessionDate: "2026-09-14",
 			});
-			const response = await SELF.fetch("http://localhost/mcp", {
+			const response = await mcpFetch({
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -229,7 +265,7 @@ describe("MCP handler", () => {
 					sessionDate: "2026-09-14",
 				});
 				const bytes = photoBytes(size);
-				const response = await SELF.fetch("http://localhost/mcp", {
+				const response = await mcpFetch({
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
@@ -272,7 +308,7 @@ describe("MCP handler", () => {
 
 		it("tools/call returns invalid_base64 when data exceeds the character limit", async () => {
 			await getOrCreateSession(env.DB, 1, { sessionDate: "2026-09-14" });
-			const response = await SELF.fetch("http://localhost/mcp", {
+			const response = await mcpFetch({
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -310,7 +346,7 @@ describe("MCP handler", () => {
 
 	describe("POST /mcp error handling", () => {
 		it("returns a JSON-RPC error for invalid JSON body", async () => {
-			const response = await SELF.fetch("http://localhost/mcp", {
+			const response = await mcpFetch({
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -334,7 +370,7 @@ describe("MCP handler", () => {
 
 	describe("GET /mcp", () => {
 		it("returns 405 Method Not Allowed", async () => {
-			const response = await SELF.fetch("http://localhost/mcp", {
+			const response = await mcpFetch({
 				method: "GET",
 			});
 

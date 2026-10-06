@@ -32,6 +32,25 @@ export interface UserIdentityRow {
  */
 export const ACCESS_IDENTITY_PROVIDER = "cloudflare-access";
 
+/**
+ * 内部 `users.id` の現在の状態を返す（見つからなければ null）。
+ *
+ * OAuth の access token は許可リストを外した後も TTL まで有効なため、
+ * `apiHandler` が毎リクエストこれで `users.status` を照会し、`disabled` なら
+ * 401 にする。
+ */
+export async function getUserStatus(
+	db: D1Database,
+	userId: number,
+): Promise<UserRow["status"] | null> {
+	const row = await db
+		.prepare("SELECT status FROM users WHERE id = ?")
+		.bind(userId)
+		.first<{ status: string }>();
+	if (!row) return null;
+	return row.status === "active" ? "active" : "disabled";
+}
+
 /** `resolveAccessIdentity` の結果。 */
 export type AccessIdentityResolution =
 	| { status: "resolved"; userId: number }

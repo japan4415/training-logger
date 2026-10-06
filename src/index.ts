@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { registerApiRoutes } from "./api/routes.js";
 import type { AppEnv } from "./env.js";
-import { mcpApp } from "./mcp/handler.js";
+import { registerAuthorizeRoutes } from "./oauth/authorize.js";
+import { registerDcrRoutes } from "./oauth/dcr.js";
+import { createOAuthProvider } from "./oauth/provider.js";
 import { registerAccessAuth } from "./security/auth.js";
 import { registerExerciseProgressRoutes } from "./views/exercise-progress.js";
 import { registerExerciseListRoutes } from "./views/exercises-list.js";
@@ -11,17 +13,19 @@ const app = new Hono<AppEnv>();
 
 // deny-by-default の Cloudflare Access 認証（公開パス以外は JWT 必須）。
 // ルート登録より前に置き、未認証リクエストがハンドラへ届かないようにする。
+// `/authorize` は保護されたまま（Access JWT 必須）で、OAuth の token / metadata /
+// 登録エンドポイントは公開パスとして扱う。
 registerAccessAuth(app);
 
-app.get("/health", (c) => {
-	return c.json({ status: "ok" });
-});
-
-app.route("/mcp", mcpApp);
+app.get("/health", (c) => c.json({ status: "ok" }));
 
 registerApiRoutes(app);
 registerExerciseListRoutes(app);
 registerExerciseProgressRoutes(app);
 registerSessionViews(app);
+registerAuthorizeRoutes(app);
+registerDcrRoutes(app);
 
-export default app;
+// `/mcp` は OAuthProvider が access token を検証してから apiHandler へ渡す。
+// それ以外のリクエストは defaultHandler（この Hono アプリ）へ流れる。
+export default createOAuthProvider(app);

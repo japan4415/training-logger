@@ -2,7 +2,9 @@
   "name": "training-logger",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
-  "compatibility_flags": ["nodejs_compat"],
+  // global_fetch_strictly_public は CIMD（Client ID Metadata Document）取得の SSRF 対策。
+  // 互換日付 2024-11-11 以降が必要で、2026-08-01 は満たしている。
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": false,
   "routes": [
     {
@@ -23,6 +25,15 @@
     {
       "binding": "PHOTOS",
       "bucket_name": "training-logger-photos"
+    }
+  ],
+  // OAuth 2.1 の grant / token / client を保存する KV。
+  // TODO(人手): 本番の namespace id に置き換える。この環境からは作成できない
+  // （`wrangler kv namespace create OAUTH_KV` を実行し、返った id をここに書く）。
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "REPLACE_WITH_OAUTH_KV_NAMESPACE_ID"
     }
   ],
   // Observability: console.log/error の出力とリクエストトレースを有効化
