@@ -55,6 +55,21 @@ pnpm exec wrangler d1 migrations apply training-logger-db --remote
 
 CI パイプライン (`ci.yml`) の PR チェックで `pnpm exec wrangler d1 migrations apply training-logger-db --local` を実行し、マイグレーション SQL の構文を検証する。構文エラーがあると CI が失敗し、マージがブロックされる。
 
+## テーブル再構築を含むマイグレーション
+
+SQLite ではテーブル定義の一部（カラム削除、`UNIQUE` 変更など）を `ALTER TABLE` で変更できないため、テーブルを作り直す。D1 は外部キーが常時有効で `PRAGMA foreign_keys = off` を使えない点に注意する。子テーブルが `ON DELETE CASCADE` で親を参照している場合、親だけを `DROP` すると子の全行が削除される（`PRAGMA defer_foreign_keys` は検査を遅らせるだけで CASCADE は止まらない）。
+
+`0005_users_and_user_id.sql` は `workout_sessions` の `UNIQUE` を変更するため、`workout_sessions` / `session_exercises` / `sets` / `session_photos` の 4 テーブルを 1 つの migration で同時に再構築する。手順は次のとおり。
+
+1. `PRAGMA defer_foreign_keys = on`
+2. 新しい列を含む `*_new` テーブルを作成する（子の `REFERENCES` は `*_new` を指す）
+3. `id` を保持して親 → 子の順にコピーする
+4. 子から `DROP` する（`sets` → `session_photos` → `session_exercises` → `workout_sessions`）
+5. 親から `RENAME` する（`*_new` → 最終名。子の参照は SQLite が自動で追随する）
+6. インデックスを再作成する
+
+`test/db/migration-0005.test.ts` が 0001〜0004 相当のデータを投入して実際の SQL を適用し、件数・ID・`PRAGMA foreign_key_check`・CASCADE・複合 `UNIQUE` を検証する。同種の再構築を追加するときは、この形でデータ入りの migration テストも併せて追加する。
+
 ## 注意事項
 
 - SQL は D1 (SQLite) の方言に準拠して記述する

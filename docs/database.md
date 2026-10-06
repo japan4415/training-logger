@@ -4,11 +4,13 @@ training-logger のデータベース設計について記述する。DBMS は C
 
 ## 設計方針
 
-ユーザー方針「筋トレの種類テーブル + 筋トレ内容テーブル」を核に、以下の 6 テーブルへ正規化する。画像本体は D1 に格納せず、Cloudflare R2 に保存する。
+ユーザー方針「筋トレの種類テーブル + 筋トレ内容テーブル」を核に、以下の 8 テーブルへ正規化する。画像本体は D1 に格納せず、Cloudflare R2 に保存する。
 
+- **`users`** -- アプリ内部のユーザー。外部 IdP の識別子を直接使わず、内部 ID でデータを所有する
+- **`user_identities`** -- 外部 IdP (例: Cloudflare Access) の識別子と `users` の対応。`subject` / `email` でユーザーを解決する
 - **`exercises`** -- 種目マスタ。種目の正規名・カテゴリ・器具・対象部位を保持
 - **`exercise_aliases`** -- 種目の別名（表記揺れ対策）
-- **`workout_sessions`** -- ワークアウトセッション。1 日 1 行で日付・目的・体調メモを管理
+- **`workout_sessions`** -- ワークアウトセッション。1 ユーザー 1 日 1 行で日付・目的・体調メモを管理
 - **`session_exercises`** -- セッション内の種目実施。順序付きで、同一種目の同日複数回出現に対応
 - **`sets`** -- セット単位の計測値。筋力系・有酸素系・柔軟系のパラメータを NULL 許容カラムで持つ
 - **`session_photos`** -- セッションに紐づく写真のメタデータ。画像本体の R2 キー・形式・サイズを保持
@@ -43,11 +45,29 @@ SQLite のカラム型として `TEXT` / `INTEGER` / `REAL` を使用する。BO
 
 ```mermaid
 erDiagram
+    users ||--o{ user_identities : "authenticates as"
+    users ||--o{ workout_sessions : "records"
     exercises ||--o{ exercise_aliases : "has aliases"
     exercises ||--o{ session_exercises : "performed in"
     workout_sessions ||--o{ session_exercises : "contains"
     workout_sessions ||--o{ session_photos : "has photos"
     session_exercises ||--o{ sets : "measured by"
+
+    users {
+        INTEGER id PK
+        TEXT created_at "NOT NULL"
+        TEXT display_name
+        TEXT status "NOT NULL active/disabled"
+        TEXT role "NOT NULL owner/member"
+    }
+
+    user_identities {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT provider "NOT NULL"
+        TEXT subject "NULL for invite rows"
+        TEXT email "NOCASE UNIQUE"
+    }
 
     exercises {
         INTEGER id PK
@@ -69,7 +89,8 @@ erDiagram
 
     workout_sessions {
         INTEGER id PK
-        TEXT session_date "NOT NULL UNIQUE"
+        INTEGER user_id FK "NOT NULL DEFAULT 1"
+        TEXT session_date "NOT NULL; UNIQUE(user_id, session_date)"
         TEXT goal
         TEXT body_condition
         TEXT notes
@@ -119,6 +140,40 @@ erDiagram
 
 ## テーブル定義
 
+### users (アプリ内ユーザー)
+
+アプリ内部のユーザーを表す。外部 IdP の識別子（`subject` など）は直接ここに持たず、`user_identities` を経由して解決する。
+
+| カラム | 型 | 制約 | 説明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | アプリ内部のユーザー ID。`workout_sessions.user_id` から参照される |
+| `created_at` | TEXT | NOT NULL DEFAULT (UTC) | 作成日時 ISO 8601 UTC |
+| `display_name` | TEXT | | 表示名 |
+| `status` | TEXT | NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')) | `active` / `disabled`。`disabled` は認証を拒否する |
+| `role` | TEXT | NOT NULL DEFAULT 'member' CHECK(role IN ('owner','member')) | `owner` / `member`。共有マスタの更新は `owner` に限定する |
+
+`0005_users_and_user_id.sql` は既定オーナー `id = 1`（`role = 'owner'`）を投入する。migration 適用前から存在するすべての `workout_sessions` は `user_id = 1` に帰属させる。
+
+### user_identities (外部 IdP 識別子)
+
+外部 IdP（例: Cloudflare Access）の識別子と `users` の対応を管理する。`(provider, subject)` でユーザーを解決する。`subject` は IdP 側で削除→再追加すると変わり得るため、email だけを持つ招待行（`subject` は NULL）を事前登録し、検証済み email が一致したときだけ `subject` を確定する運用も想定する。
+
+| カラム | 型 | 制約 | 説明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 対応 ID |
+| `user_id` | INTEGER | NOT NULL, FK -> users(id) ON DELETE CASCADE | 対応するアプリ内ユーザー |
+| `provider` | TEXT | NOT NULL | IdP 名（例: `cloudflare-access`） |
+| `subject` | TEXT | | IdP の主体識別子。email のみの招待行では NULL |
+| `email` | TEXT | COLLATE NOCASE UNIQUE | 照合用 email。大文字小文字を区別しない一意制約 |
+
+制約:
+
+- `UNIQUE(provider, subject)` -- 同一 IdP 内で `subject` は一意。`subject` が NULL の招待行は複数登録できる
+
+インデックス:
+
+- `idx_user_identities_user_id` -- `user_id` でユーザーの識別子一覧を取得
+
 ### exercises (種目マスタ)
 
 種目の正規名称と属性を管理するマスタテーブル。
@@ -152,21 +207,30 @@ erDiagram
 
 ### workout_sessions (ワークアウトセッション)
 
-1 日 1 行のセッション管理テーブル。
+1 ユーザー 1 日 1 行のセッション管理テーブル。
 
 | カラム | 型 | 制約 | 説明 |
 |---|---|---|---|
 | `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | セッション ID |
-| `session_date` | TEXT | NOT NULL UNIQUE | セッション日付 'YYYY-MM-DD' (Asia/Tokyo) |
+| `user_id` | INTEGER | NOT NULL DEFAULT 1, FK -> users(id) | 所有ユーザー。`0005_users_and_user_id.sql` で追加 |
+| `session_date` | TEXT | NOT NULL | セッション日付 'YYYY-MM-DD' (Asia/Tokyo) |
 | `goal` | TEXT | | 目的（例: "ダイエット"） |
 | `body_condition` | TEXT | | 体調・怪我メモ |
 | `notes` | TEXT | | メモ |
 | `created_at` | TEXT | NOT NULL DEFAULT (UTC) | 作成日時 ISO 8601 UTC |
 | `updated_at` | TEXT | NOT NULL DEFAULT (UTC) | 更新日時 ISO 8601 UTC |
 
+制約:
+
+- `UNIQUE(user_id, session_date)` -- 同一ユーザー内で日付は一意。別ユーザーは同じ日付を記録できる
+
 インデックス:
 
 - `idx_workout_sessions_date` -- `session_date` で範囲検索・ソート
+
+> **DEFAULT 1 について**: `user_id` の `DEFAULT 1` は、migration 0005 適用直後も `user_id` を指定しない旧コードの INSERT が壊れないようにする過渡的な措置である。リポジトリ層で `user_id` の明示指定が徹底された後、別 migration で DEFAULT を外すか、DEFAULT を残す場合はテストで明示指定を強制する。
+
+> **所有境界**: `session_exercises` / `sets` / `session_photos` は `user_id` を持たず、所有境界は親 `workout_sessions.user_id` に一本化する。子テーブルへの ID 直指定の更新・削除は、必ず親セッションの所有を検証してから行う。
 
 > **現状の制約**: `updated_at` は「更新日時」と定義しているが、同日再記録時にメタデータ（`goal` / `body_condition` / `notes`）を更新する `updateSession` は `updated_at` を書き換えない。DB 層で `updated_at` を更新するのは `set_exercise_muscles` による `exercises.updated_at` だけである。
 
@@ -257,7 +321,7 @@ R2 キーは `sessions/{YYYY-MM-DD}/{sessionId}/{uuid}.{ext}` 形式で、`YYYY-
 
 ## DDL (マイグレーションファイル)
 
-初期 5 テーブルの SQL は `migrations/0001_initial_schema.sql` に配置する。
+初期 5 テーブル（`exercises` / `exercise_aliases` / `workout_sessions` / `session_exercises` / `sets`）の SQL は `migrations/0001_initial_schema.sql` に配置する。`session_photos` は `0004`、`users` / `user_identities` と `workout_sessions.user_id` は `0005` で追加する。
 
 ```sql
 -- 種目マスタ
@@ -358,6 +422,22 @@ CREATE INDEX idx_session_photos_session_id ON session_photos(session_id);
 
 R2 を先に削除した後で D1 の削除に失敗すると、写真行が欠損オブジェクトを一時的に参照し得る。API 一覧と SSR 写真断片は最大 4 行を `head` で確認し、R2 に存在しない行を D1 から除外・削除する。本体 GET も R2 miss 時に 404 を返して該当行を削除し、再アクセス時に自己修復する。R2 put 後の D1 INSERT 失敗や枚数上限では R2 の補償削除を試みるが、その補償失敗は元の結果・例外を上書きせずログへ記録する。
 
+### ユーザー分離マイグレーション
+
+`migrations/0005_users_and_user_id.sql` は `users` / `user_identities` を新設し、`workout_sessions` に `user_id` を追加して `session_date` の単独 UNIQUE を `UNIQUE(user_id, session_date)` に置き換える。
+
+D1 は外部キーを常時有効にし、migration 中も `PRAGMA foreign_keys = off` を使えない。`session_exercises` / `sets` / `session_photos` は `workout_sessions` を `ON DELETE CASCADE` で参照しているため、`workout_sessions` だけを `DROP` すると子テーブルの全行が消える（`PRAGMA defer_foreign_keys` は検査を遅らせるだけで CASCADE を止めない）。そこで 0005 は 4 テーブルを 1 つの migration で同時に再構築する。
+
+1. `PRAGMA defer_foreign_keys = on`
+2. `users` / `user_identities` を作成し、既定オーナー `id = 1` を投入
+3. `*_new` を作成（子の `REFERENCES` は `*_new` を指す）
+4. `id` を保持して親 → 子の順にコピー
+5. 子から `DROP`（`sets` → `session_photos` → `session_exercises` → `workout_sessions`）
+6. 親から `RENAME`（`workout_sessions_new` → `workout_sessions`。子の参照は SQLite が自動で追随する）
+7. インデックスを再作成
+
+再構築後も件数・ID・`CHECK`・`UNIQUE`・`ON DELETE CASCADE` は 0001〜0004 と同等に保たれる。`exercises` / `exercise_aliases` は変更しない（共有マスタ維持）。適用前検証は `test/db/migration-0005.test.ts` が 0001〜0004 相当のデータを投入し、実際の 0005 の SQL を適用して件数・ID・`PRAGMA foreign_key_check`・CASCADE・複合 `UNIQUE` を確認する。
+
 ## 計画 vs 実績
 
 セットレベルで計画と実績を区別する。
@@ -425,6 +505,7 @@ migrations/
   0002_atlas_muscles.sql
   0003_atlas_trunk_muscles.sql
   0004_session_photos.sql
+  0005_users_and_user_id.sql
 ```
 
 ### コマンド
