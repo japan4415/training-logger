@@ -164,8 +164,8 @@ export type AccessAuthResult =
 	| { ok: true; user: JwtPayload | null }
 	| { ok: false; response: Response };
 
-async function authenticateAccessUser(
-	c: Context<{ Bindings: Bindings }>,
+async function authenticateAccessUser<E extends { Bindings: Bindings }>(
+	c: Context<E>,
 	fetchFn: FetchFn = fetch,
 ): Promise<AccessAuthResult> {
 	const { ACCESS_TEAM_DOMAIN: domain, ACCESS_AUD: audience } = c.env;
@@ -199,8 +199,8 @@ async function authenticateAccessUser(
 }
 
 /** Apply Fetch Metadata CSRF checks and Cloudflare Access authentication. */
-export async function requireAccessUser(
-	c: Context<{ Bindings: Bindings }>,
+export async function requireAccessUser<E extends { Bindings: Bindings }>(
+	c: Context<E>,
 	fetchFn: FetchFn = fetch,
 ): Promise<AccessAuthResult> {
 	const fetchSite = c.req.header("Sec-Fetch-Site")?.toLowerCase();
@@ -212,9 +212,8 @@ export async function requireAccessUser(
 }
 
 /** Verify Cloudflare Access for a read-only request without a CSRF check. */
-export async function requireAccessUserForRead(
-	c: Context<{ Bindings: Bindings }>,
-	fetchFn: FetchFn = fetch,
-): Promise<AccessAuthResult> {
+export async function requireAccessUserForRead<
+	E extends { Bindings: Bindings },
+>(c: Context<E>, fetchFn: FetchFn = fetch): Promise<AccessAuthResult> {
 	return authenticateAccessUser(c, fetchFn);
 }

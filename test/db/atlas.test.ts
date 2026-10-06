@@ -11,13 +11,14 @@ import { getHistory, getSessionDetail } from "../../src/db/queries.js";
 import { createSessionExercise } from "../../src/db/records.js";
 import { getOrCreateSession } from "../../src/db/sessions.js";
 import { getDefaultAtlasAssignment } from "../../src/domain/atlas.js";
-import type { Bindings } from "../../src/env.js";
+import type { AppEnv } from "../../src/env.js";
 import {
 	listAtlasMusclesHandler,
 	registerExerciseHandler,
 	searchExercisesHandler,
 	setExerciseMusclesHandler,
 } from "../../src/mcp/tools/exercises.js";
+import { registerAccessAuth } from "../../src/security/auth.js";
 import { applyMigrations, cleanDatabase } from "./test-helpers.js";
 
 const empty = { primary: [], secondary: [], unavailable: [] };
@@ -26,8 +27,12 @@ const assignment = {
 	secondary: ["FJ1437"],
 	unavailable: ["広背筋"],
 };
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<AppEnv>();
+registerAccessAuth(app);
 registerApiRoutes(app);
+
+/** ローカル開発フォールバックを有効にした bindings。 */
+const authEnv = { ...env, PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1" };
 
 describe("Persisted Atlas assignments", () => {
 	beforeAll(() => applyMigrations(env.DB));
@@ -185,7 +190,7 @@ describe("Persisted Atlas assignments", () => {
 				name: "API test",
 				atlas_muscles: value,
 			});
-			const list = await app.request("/api/exercises", {}, env);
+			const list = await app.request("/api/exercises", {}, authEnv);
 			expect(list.status).toBe(200);
 			expect(
 				(await list.json<{ exercises: { atlas_muscles: unknown }[] }>())
@@ -194,7 +199,7 @@ describe("Persisted Atlas assignments", () => {
 			const detail = await app.request(
 				`/api/exercises/${exercise.id}`,
 				{},
-				env,
+				authEnv,
 			);
 			expect(
 				(await detail.json<{ exercise: { atlas_muscles: unknown } }>()).exercise

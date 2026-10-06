@@ -6,9 +6,9 @@ import {
 } from "../db/exercises.js";
 import { getExerciseStats } from "../db/queries.js";
 import type { ExerciseRow } from "../db/types.js";
-import { DEFAULT_USER_ID } from "../default-user.js";
 import { parseAtlasAssignment } from "../domain/atlas.js";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
+import { requireUserId } from "../security/auth.js";
 
 const VALID_CATEGORIES = new Set<string>([
 	"strength",
@@ -24,8 +24,9 @@ const VALID_CATEGORIES = new Set<string>([
  *   category - strength | cardio | flexibility | other
  *   q        - search query (name or alias)
  */
-export async function listExercises(c: Context<{ Bindings: Bindings }>) {
+export async function listExercises(c: Context<AppEnv>) {
 	const db = c.env.DB;
+	const userId = requireUserId(c);
 	const category = c.req.query("category");
 	const q = c.req.query("q");
 
@@ -42,7 +43,7 @@ export async function listExercises(c: Context<{ Bindings: Bindings }>) {
 	// Enrich each exercise with last_performed and total_sessions
 	const exercises = await Promise.all(
 		exercisesWithAliases.map(async ({ exercise }) => {
-			const stats = await getExerciseStats(db, DEFAULT_USER_ID, exercise.id);
+			const stats = await getExerciseStats(db, userId, exercise.id);
 			return {
 				id: exercise.id,
 				name: exercise.name,
@@ -64,7 +65,7 @@ export async function listExercises(c: Context<{ Bindings: Bindings }>) {
  *
  * Returns exercise detail with aliases.
  */
-export async function getExercise(c: Context<{ Bindings: Bindings }>) {
+export async function getExercise(c: Context<AppEnv>) {
 	const db = c.env.DB;
 	const id = Number(c.req.param("id"));
 

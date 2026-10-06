@@ -2,8 +2,8 @@ import type { Context } from "hono";
 import { getExerciseById } from "../db/exercises.js";
 import { getHistory } from "../db/queries.js";
 import type { SetRow } from "../db/types.js";
-import { DEFAULT_USER_ID } from "../default-user.js";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
+import { requireUserId } from "../security/auth.js";
 
 const VALID_PERIODS = new Set(["1m", "3m", "6m", "all"]);
 const PERIOD_MONTHS: Record<string, number> = { "1m": 1, "3m": 3, "6m": 6 };
@@ -62,9 +62,7 @@ function computeMaxWeightByUnit(sets: SetRow[]): Record<string, number> {
  *   to     - YYYY-MM-DD
  *   period - 1m | 3m | 6m | all  (shorthand for `from`)
  */
-export async function getExerciseStatsHandler(
-	c: Context<{ Bindings: Bindings }>,
-) {
+export async function getExerciseStatsHandler(c: Context<AppEnv>) {
 	const db = c.env.DB;
 	const id = Number(c.req.param("id"));
 
@@ -99,7 +97,7 @@ export async function getExerciseStatsHandler(
 	const dateFrom = resolveFromDate(fromParam, periodParam);
 	const dateTo = toParam;
 
-	const details = await getHistory(db, DEFAULT_USER_ID, {
+	const details = await getHistory(db, requireUserId(c), {
 		exerciseName: exercise.name,
 		dateFrom,
 		dateTo,

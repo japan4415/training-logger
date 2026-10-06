@@ -2,10 +2,12 @@ import { env } from "cloudflare:test";
 import { Hono } from "hono";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { registerApiRoutes } from "../../src/api/routes.js";
-import type { Bindings } from "../../src/env.js";
+import type { AppEnv } from "../../src/env.js";
+import { registerAccessAuth } from "../../src/security/auth.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<AppEnv>();
+registerAccessAuth(app);
 registerApiRoutes(app);
 
 async function seedIsolationData(): Promise<void> {
@@ -41,7 +43,7 @@ async function seedIsolationData(): Promise<void> {
 }
 
 async function fetchJson(path: string) {
-	const res = await app.request(path, {}, env);
+	const res = await app.request(path, {}, allowEnv());
 	return { res, body: (await res.json()) as Record<string, unknown> };
 }
 

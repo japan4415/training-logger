@@ -1,16 +1,21 @@
 import { env } from "cloudflare:test";
 import { Hono } from "hono";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { Bindings } from "../../src/env.js";
+import type { AppEnv } from "../../src/env.js";
+import { registerAccessAuth } from "../../src/security/auth.js";
 import { registerExerciseProgressRoutes } from "../../src/views/exercise-progress.js";
 import { registerExerciseListRoutes } from "../../src/views/exercises-list.js";
 import { registerSessionViews } from "../../src/views/sessions-list.js";
 import { applyMigrations, cleanDatabase } from "../db/test-helpers.js";
 
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<AppEnv>();
+registerAccessAuth(app);
 registerSessionViews(app);
 registerExerciseListRoutes(app);
 registerExerciseProgressRoutes(app);
+
+/** ローカル開発フォールバックを有効にした bindings。 */
+const authEnv = { ...env, PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED: "1" };
 
 /**
  * Two users share the exercise master. USER_A (id 1) is the implicit viewer of
@@ -57,7 +62,9 @@ describe("view user isolation", () => {
 
 	describe("GET / (session list)", () => {
 		it("shows only the current user's sessions", async () => {
-			const html = await (await app.request("/?month=2026-08", {}, env)).text();
+			const html = await (
+				await app.request("/?month=2026-08", {}, authEnv)
+			).text();
 			expect(html).toContain("USER-A-GOAL");
 			expect(html).not.toContain("USER-B-SECRET");
 			expect(html).not.toContain("2026/08/16");
@@ -66,19 +73,19 @@ describe("view user isolation", () => {
 
 	describe("GET /sessions/:id", () => {
 		it("returns the current user's session", async () => {
-			const response = await app.request("/sessions/1", {}, env);
+			const response = await app.request("/sessions/1", {}, authEnv);
 			expect(response.status).toBe(200);
 		});
 
 		it("returns 404 for another user's session", async () => {
-			const response = await app.request("/sessions/2", {}, env);
+			const response = await app.request("/sessions/2", {}, authEnv);
 			expect(response.status).toBe(404);
 			const html = await response.text();
 			expect(html).not.toContain("USER-B-SECRET");
 		});
 
 		it("returns 404 for another user's photo page", async () => {
-			const response = await app.request("/sessions/2/photos", {}, env);
+			const response = await app.request("/sessions/2/photos", {}, authEnv);
 			expect(response.status).toBe(404);
 		});
 
@@ -87,7 +94,7 @@ describe("view user isolation", () => {
 				"INSERT INTO workout_sessions (id, user_id, session_date, goal) VALUES (3, 1, '2026-08-17', 'USER-A-LATER')",
 			).run();
 
-			const html = await (await app.request("/sessions/1", {}, env)).text();
+			const html = await (await app.request("/sessions/1", {}, authEnv)).text();
 			expect(html).toContain("/sessions/3");
 			expect(html).not.toContain("/sessions/2");
 		});
@@ -95,7 +102,7 @@ describe("view user isolation", () => {
 
 	describe("GET /exercises (exercise list)", () => {
 		it("aggregates last performed and counts for the current user only", async () => {
-			const html = await (await app.request("/exercises", {}, env)).text();
+			const html = await (await app.request("/exercises", {}, authEnv)).text();
 			expect(html).toContain("回数: 1");
 			expect(html).toContain("2026-08-15");
 			expect(html).not.toContain("2026-08-16");
@@ -104,7 +111,9 @@ describe("view user isolation", () => {
 
 	describe("GET /exercises/:id (progress)", () => {
 		it("shows only the current user's history", async () => {
-			const html = await (await app.request("/exercises/1", {}, env)).text();
+			const html = await (
+				await app.request("/exercises/1", {}, authEnv)
+			).text();
 			expect(html).toContain("60kg");
 			expect(html).not.toContain("999kg");
 			expect(html).not.toContain("2026-08-16");

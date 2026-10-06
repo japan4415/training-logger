@@ -1,10 +1,10 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Hono } from "hono";
 import { DEFAULT_USER_ID } from "../default-user.js";
-import type { Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
 import { createMcpServer } from "./server.js";
 
-export const mcpApp = new Hono<{ Bindings: Bindings }>();
+export const mcpApp = new Hono<AppEnv>();
 
 /**
  * POST /mcp - Streamable HTTP transport endpoint.
