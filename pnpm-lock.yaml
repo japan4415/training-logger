@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@cloudflare/workers-oauth-provider':
         specifier: ^1.2.2
-        version: 1.2.2
+        version: 1.2.3
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@4.4.3)
@@ -182,8 +182,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cloudflare/workers-oauth-provider@1.2.2':
-    resolution: {integrity: sha512-xroOs4RG/WIV5arUWUvtWno1gP1sUYFqQuZ8xnkPW6VbUrgNmu2o9Y4D76t+2d36JO2f4cVy9UC0Uk78N+R8Jw==}
+  '@cloudflare/workers-oauth-provider@1.2.3':
+    resolution: {integrity: sha512-40eGeA3DnTOEl2ijHYY5Z9yNIf0fdjgomoaA6GHPo4FyKQw0oXPuy4GVjTE/uNfS/MoFAvzsuVBRwTPKUki4hA==}
 
   '@cloudflare/workers-types@5.20260820.1':
     resolution: {integrity: sha512-KFRmtV4toMf1LL2yXylFTIs7YAS1IYo6jrJCneBG8I1VXHcKCIdqPROH6lGum+gZ+ZgdcNZqxDgjM1yEMgma2w==}
@@ -1645,7 +1645,7 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260820.1':
     optional: true
 
-  '@cloudflare/workers-oauth-provider@1.2.2': {}
+  '@cloudflare/workers-oauth-provider@1.2.3': {}
 
   '@cloudflare/workers-types@5.20260820.1': {}
 
