@@ -784,7 +784,7 @@ https://training-logger.discord.jp/mcp
 
 カスタムドメインを設定済み。写真を保存する場合、Claude Code などローカルファイルを読める環境では記録後に `upload_session_photo` で base64 を直接送信できる。それ以外のクライアントでは `create_photo_upload_link` が返す URL をブラウザで開いてアップロードする。チャットの添付画像を MCP のツール引数へそのまま渡す標準経路はない。
 
-`POST /mcp` は `upload_session_photo` の入力として base64 を受け付けるが、ツール結果から保存済み画像の本体は配信しない。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。写真 API は GET / POST / DELETE のいずれも Worker 内で Access JWT を検証し（取得の GET は CSRF 検査なし）、`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定なら 401 `access_not_configured` を返す。したがって `upload_session_photo` が返す `url` は Access にログインしたブラウザで開く必要がある。
+`POST /mcp` は `upload_session_photo` の入力として base64 を受け付けるが、ツール結果から保存済み画像の本体は配信しない。ボディ上限は transport 層で `PHOTO_MAX_BASE64_CHARS` + 256 KiB とし、超えるリクエストには 413 を返す。MCP SDK 1.31.0 以降の既定は 4 MiB で、最大 10 MiB の写真を base64（約 14 MB）で送る `upload_session_photo` が通らないため引き上げている。画像本体の取得は `GET /api/sessions/:id/photos/:photoId`、ブラウザからの追加・削除は写真用 REST API を使用する。写真 API は GET / POST / DELETE のいずれも Worker 内で Access JWT を検証し（取得の GET は CSRF 検査なし）、`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定なら 401 `access_not_configured` を返す。したがって `upload_session_photo` が返す `url` は Access にログインしたブラウザで開く必要がある。
 
 ### セキュリティ境界
 
