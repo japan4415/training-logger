@@ -66,12 +66,7 @@
 
 ## cloudflare.config.ts（デプロイ設定）
 
-デプロイは `cf` CLI で行う（`pnpm run deploy` = `cf deploy`）。`cf build` / `cf deploy` は `wrangler.jsonc` を読まず、リポジトリ直下の `cloudflare.config.ts`（Programmatic configuration、open beta）を読む。`wrangler.jsonc` は次の用途で残している。
-
-- `@cloudflare/vitest-pool-workers`（wrangler 形式の config しか受け付けない）
-- `wrangler dev` / `wrangler tail`
-- `wrangler secret put`（cf は単一 secret の設定に未対応）
-- D1 の退避・リハーサル・確認クエリ（cf に `d1 export` / ローカル `d1 query` が無い）
+デプロイは `cf` CLI で行う（`pnpm run deploy` = `cf deploy`）。`cf build` / `cf deploy` は `wrangler.jsonc` を読まず、リポジトリ直下の `cloudflare.config.ts`（Programmatic configuration、open beta）を読む。`wrangler.jsonc` は cf に無い／未対応の操作のために残している（[cf と wrangler の役割分担](#cf-と-wrangler-の役割分担)）。
 
 | 設定 | 置き場所 |
 |---|---|
@@ -87,9 +82,27 @@ pnpm exec cf deploy --dry-run   # ビルドと検証のみ（アップロード�
 pnpm exec cf deploy             # ビルドして本番へ反映
 ```
 
+## cf と wrangler の役割分担
+
+デプロイと D1 マイグレーションは cf、次の操作は wrangler を使う。cf 側にコマンドが無いか、cf へ移す利点が無いためで、`wrangler.jsonc` と wrangler の devDependency はこのために残している。
+
+| 操作 | コマンド | wrangler のままにしている理由 |
+|---|---|---|
+| テスト（D1 binding を使う） | `pnpm run test`（`vitest.config.ts` が `wrangler.jsonc` を指定） | `@cloudflare/vitest-pool-workers` は wrangler 形式の config しか受け付けない |
+| ローカル開発サーバ | `pnpm run dev`（= `wrangler dev`） | `cf dev` はローカル state を `.cloudflare/state` に置くため、既存のローカル D1（`.wrangler/state`）と分かれる。乗り換える利点が無い |
+| ライブログ | `pnpm exec wrangler tail training-logger` | cf はライブログのストリームに未対応 |
+| シークレットの設定 | `pnpm exec wrangler secret put <NAME>` | cf は単一 secret の設定に未対応 |
+| 特定バージョンのデプロイ（secret 反映・ロールバック） | `pnpm exec wrangler versions list` / `pnpm exec wrangler versions deploy <id>` | cf の `workers versions` は create / delete / get / list / profile のみで、特定バージョンのデプロイが無い |
+| D1 のバックアップ | `pnpm exec wrangler d1 export training-logger-db --remote --output <file>` | cf に `d1 export` が無い |
+| D1 のローカル検証クエリ・リハーサル | `pnpm exec wrangler d1 execute training-logger-db --local ...` | cf の `d1 query` はローカル未対応（`--local` を付けるとエラーになる） |
+
+wrangler は `package.json` の devDependency でバージョンを固定し、`pnpm exec wrangler` で実行する。cf 側に同等のコマンドが追加されたら順次移行する。
+
 ## 初期構築手順
 
 > **`main` へのマージで自動デプロイされる点に注意**: CD は `main` への push を検知して自動デプロイする（末尾の「CI/CD」節を参照）。手順 3〜7 のうち、KV の id 反映・`0005` の本番適用・Access ポリシー・オーナーの紐付けは**PR のマージ前に**終えておく。KV の id が未置換のまま、または `0005` 未適用・オーナー未紐付けでマージすると、デプロイが失敗するかオーナーが `403 user_not_registered` でロックアウトする。**シークレット（手順 5）だけは例外**で、Workers Builds が PR ブランチのプレビュー版をアップロードしている間は `wrangler secret put` が拒否されるうえ、入れた secret は未デプロイの版になる（cf は単一 secret の設定に未対応のため、secret 操作は wrangler のまま）。マージ後の自動デプロイが終わってから `secret put` し、`wrangler versions list` で "Updated secret" の版を確認して `wrangler versions deploy <id> -y` で反映する。この間（数分）は Web が 401、同意画面が 503 で止まる（fail-closed）。
+
+> **作成系コマンドは cf でも実行できる**: 手順 1〜3 の `wrangler d1 create` / `wrangler r2 bucket create` / `wrangler kv namespace create` には cf の同等コマンドがある（`cf d1 create --name <name>` / `cf r2 buckets create --name <bucket>` / `cf kv namespaces create --title <title>`）。本節は初期構築時の記録として wrangler 表記のまま残している。
 
 ### 1. D1 データベースの作成
 
