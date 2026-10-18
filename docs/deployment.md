@@ -70,13 +70,14 @@
 
 - `@cloudflare/vitest-pool-workers`（wrangler 形式の config しか受け付けない）
 - `wrangler dev` / `wrangler tail`
-- D1 マイグレーションの適用（`migrations_dir` は cf 側に項目が無い）
+- `wrangler secret put`（cf は単一 secret の設定に未対応）
+- D1 の退避・リハーサル・確認クエリ（cf に `d1 export` / ローカル `d1 query` が無い）
 
 | 設定 | 置き場所 |
 |---|---|
 | Worker 名・互換日付/フラグ・binding・custom domain・observability・`workers_dev` | `cloudflare.config.ts` |
 | 静的アセットのディレクトリ（`./public`） | `wrangler.config.ts`（Wrangler bundler のビルド設定） |
-| D1 の `migrations_dir` | `wrangler.jsonc` |
+| D1 の `migrations_dir` | `wrangler.jsonc`（cf は `--dir migrations` で指定。マイグレーションは cf で適用する） |
 
 両者が同じ Worker を定義していることは `test/deploy-config.test.ts` が検査する。片側だけ変更すると `pnpm run test` が落ちる。
 
@@ -119,8 +120,10 @@ pnpm exec wrangler kv namespace create OAUTH_KV
 ### 4. マイグレーションの適用
 
 ```bash
-pnpm exec wrangler d1 migrations apply training-logger-db --remote
+pnpm run db:migrate
 ```
+
+cf の `d1 migrations apply` は database ID を取り、`--local` を付けない限りリモートへ適用する（詳細は [migrations/README.md](../migrations/README.md)）。
 
 DB 変更を含む場合は **migration を先に適用してから Worker をデプロイする**（新コードが新スキーマを前提にするため）。`0005_users_and_user_id.sql` は 4 テーブルを再構築するため、必ず [migrations/README.md の「0005 の本番適用手順」](../migrations/README.md#0005-の本番適用手順)（退避 → ローカルリハーサル → 本番適用 → 件数・FK・採番位置の確認）に従う。
 
@@ -222,7 +225,7 @@ PR を `main` にマージすると Workers Builds が自動でビルド・デ�
 本番環境（production）のみ運用する。個人利用のため preview 環境を設ける利益が薄い。
 
 - **本番**: `pnpm exec cf deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `pnpm exec wrangler secret put` で設定（cf は単一 secret の設定に未対応）
-- **ローカル開発**: `wrangler dev` で起動。D1・R2・KV binding はローカルでエミュレートされる。マイグレーション適用は `pnpm exec wrangler d1 migrations apply training-logger-db --local`。Web / REST の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定する（未設定だと認証必須のパスは 401 `access_not_configured`）。このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。書き込み系リクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
+- **ローカル開発**: `wrangler dev` で起動。D1・R2・KV binding はローカルでエミュレートされる。マイグレーション適用は `pnpm run db:migrate:local`（cf。`--persist-to .wrangler/state` で `wrangler dev` と同じローカル D1 を共有する）。Web / REST の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定する（未設定だと認証必須のパスは 401 `access_not_configured`）。このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。書き込み系リクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
 
 ## ユーザーの無効化とトークン失効
 
@@ -307,7 +310,7 @@ jobs:
       - run: pnpm run lint
 
       - name: Validate D1 migrations
-        run: pnpm exec wrangler d1 migrations apply training-logger-db --local
+        run: pnpm run db:migrate:local
 
       - run: pnpm run test
 ```
@@ -331,7 +334,7 @@ cf builds logs get <build-uuid>                                          # 失�
 | `main` | `npx cf build` | `npx cf deploy --prebuilt` |
 | `main` 以外 | `npx cf build` | `npx cf workers versions create --prebuilt` |
 
-現行の Workers Builds 設定は D1 マイグレーションを自動適用しない。DB 変更を含む PR では、本番の `pnpm exec wrangler d1 migrations apply training-logger-db --remote` をデプロイ前に実行し、適用履歴を確認する（[運用手順](../migrations/README.md)）。ビルド成功だけでは DB 移行の完了を意味しない。
+現行の Workers Builds 設定は D1 マイグレーションを自動適用しない。DB 変更を含む PR では、本番の `pnpm run db:migrate` をデプロイ前に実行し、適用履歴を確認する（[運用手順](../migrations/README.md)）。ビルド成功だけでは DB 移行の完了を意味しない。
 
 ## バックアップ
 

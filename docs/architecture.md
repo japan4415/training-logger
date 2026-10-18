@@ -335,7 +335,7 @@ training-logger/
 
 **`public/`** - Workers Assets で配信される静的ファイル。`/static` プレフィックスは使わず、サイトルートから直接配信する（例: `/css/style.css`）。
 
-**`migrations/`** - D1 のマイグレーション SQL。`pnpm exec wrangler d1 migrations apply` で適用する。
+**`migrations/`** - D1 のマイグレーション SQL。`pnpm exec cf d1 migrations apply <DATABASE_ID> --dir migrations` で適用する（ローカルは `pnpm run db:migrate:local`）。
 
 **`test/`** - `@cloudflare/vitest-pool-workers` を使用し、実際の D1 バインディングでテストを実行する。
 

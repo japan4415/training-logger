@@ -1,6 +1,6 @@
 # マイグレーション運用手順
 
-Cloudflare D1 のマイグレーションは `wrangler d1 migrations` コマンドで管理する。
+Cloudflare D1 のマイグレーションは `cf d1 migrations` コマンドで管理する。`wrangler d1 migrations` も同じ `migrations/` と同じ `d1_migrations` テーブルを扱うため併用できるが、通常は cf を使う（cf に `d1 export` / ローカル `d1 query` が無いため、退避とリハーサルだけは wrangler を使う）。
 
 ## ファイル命名規則
 
@@ -15,47 +15,49 @@ migrations/
 ```
 
 - 番号は 4 桁ゼロ埋め (`0001`, `0002`, ...)
-- wrangler が番号順に適用する。手動で順序を変更しない
+- cf が番号順に適用する。手動で順序を変更しない
 - 適用済みのマイグレーションファイルは編集・削除しない（D1 が `d1_migrations` テーブルで適用状態を管理しているため、不整合が生じる）
 
 ## 新規マイグレーションの作成
 
 ```bash
-pnpm exec wrangler d1 migrations create training-logger-db <name>
+pnpm exec cf d1 migrations create <name>
 ```
 
-`migrations/` ディレクトリに空の SQL ファイルが生成される。生成されたファイルに DDL を記述する。
+`migrations/` ディレクトリに空の SQL ファイルが生成される（既定の出力先が `./migrations`）。生成されたファイルに DDL を記述する。
 
 例:
 
 ```bash
-pnpm exec wrangler d1 migrations create training-logger-db add_user_preferences
-# -> migrations/0002_add_user_preferences.sql が生成される
+pnpm exec cf d1 migrations create add_user_preferences
+# -> migrations/0006_add_user_preferences.sql が生成される（既存の最大番号 + 1）
 ```
 
 ## マイグレーションの適用
 
+`cf d1 migrations` は DB 名ではなく **database ID** を取る。本番の ID は `fed11dc7-680c-4245-a3db-95e73f4ddebe`（`wrangler.jsonc`・`cloudflare.config.ts` と同じ値）で、`package.json` のスクリプトに埋め込んである。
+
 ### ローカル（開発）
 
 ```bash
-pnpm exec wrangler d1 migrations apply training-logger-db --local
+pnpm run db:migrate:local
 ```
 
-`wrangler dev` が使用するローカル D1 (`.wrangler/state/v3/d1/`) に適用される。
+`--persist-to .wrangler/state` により、`wrangler dev` が読むローカル D1（`.wrangler/state/v3/d1/`）と同じ DB に適用する。cf と wrangler は同じ Miniflare の state レイアウトを使うため、cf で適用した結果を `wrangler dev` がそのまま読める。
 
 ### リモート（本番）
 
 ```bash
-pnpm exec wrangler d1 migrations apply training-logger-db --remote
+pnpm run db:migrate
 ```
+
+cf は `--remote` を付けずにリモートへ適用する（`--local` を付けたときだけローカル）。適用前に `pnpm exec cf d1 migrations list fed11dc7-680c-4245-a3db-95e73f4ddebe` で未適用の一覧を確認できる。
 
 本番の D1 データベースに適用される。デプロイは Cloudflare Workers Builds (Git 連携) で行われるが、Workers Builds は Worker のビルド・デプロイのみを行い D1 マイグレーションの自動適用は行わないため、リモート DB へのマイグレーション適用は手動で実行する必要がある。将来的に自動化する場合は別途検討する。
 
-cf で適用する場合は `pnpm exec cf d1 migrations apply <DATABASE_ID> --dir migrations` を使う（cf はリモート適用が既定で、`migrations_dir` は `cloudflare.config.ts` に書けない）。
-
 ## CI での構文検証
 
-CI パイプライン (`ci.yml`) の PR チェックで `pnpm exec wrangler d1 migrations apply training-logger-db --local` を実行し、マイグレーション SQL の構文を検証する。構文エラーがあると CI が失敗し、マージがブロックされる。
+CI パイプライン (`ci.yml`) の PR チェックで `pnpm run db:migrate:local` を実行し、マイグレーション SQL の構文を検証する。`cf d1 migrations apply --local` は資格情報なしで動くため、CI にシークレットを追加する必要はない。構文エラーがあると CI が失敗し、マージがブロックされる。
 
 ## テーブル再構築を含むマイグレーション
 
@@ -82,6 +84,8 @@ SQLite ではテーブル定義の一部（カラム削除、`UNIQUE` 変更な�
 
 `0005` は 4 テーブルを再構築する変更のため、本番へ適用する前に次の順で進める。`--remote` の操作は人手で実施する（自動作業環境からは実行しない）。実データや Time Travel bookmark の具体値はドキュメントへ書かない。
 
+> 退避（`d1 export`）・リハーサル（ローカル `d1 execute`）・確認クエリ（ローカル `d1 execute`）は cf に相当コマンドが無いため wrangler を使う。適用そのものは `pnpm run db:migrate` / `pnpm run db:migrate:local`（cf）で行う。
+
 1. **退避**: `pnpm exec wrangler d1 export training-logger-db --remote --output <退避ファイル>` で現行データを退避し、Time Travel の現在の bookmark を控える。
 2. **リハーサル**: 手順 1 の export を、既存の `.wrangler` state と衝突しない空の専用ディレクトリへ投入してから `0005` を適用する。通常のローカル開発用 state を汚さないよう、`--persist-to` に空のディレクトリを指定する。
    ```bash
@@ -89,11 +93,11 @@ SQLite ではテーブル定義の一部（カラム削除、`UNIQUE` 変更な�
    mkdir -p <リハーサル用ディレクトリ>
    pnpm exec wrangler d1 execute training-logger-db --local \
      --persist-to <リハーサル用ディレクトリ> --file <退避ファイル>
-   pnpm exec wrangler d1 migrations apply training-logger-db --local \
-     --persist-to <リハーサル用ディレクトリ>
+   pnpm exec cf d1 migrations apply fed11dc7-680c-4245-a3db-95e73f4ddebe --local \
+     --dir migrations --persist-to <リハーサル用ディレクトリ>
    ```
    適用前後で件数・`PRAGMA foreign_key_check`・`sqlite_sequence`（下記の確認クエリ）を比較する。
-3. **本番適用**: `pnpm exec wrangler d1 migrations apply training-logger-db --remote` を実行する。
+3. **本番適用**: `pnpm run db:migrate` を実行する（cf はリモート適用が既定）。
 4. **確認**: 適用後に `workout_sessions` / `session_exercises` / `sets` / `session_photos` の件数が適用前と一致すること、`PRAGMA foreign_key_check` が空であること、`workout_sessions` / `session_exercises` / `sets` の `sqlite_sequence.seq` が適用前後で一致することを確認する。`seq` が減っていると、再構築前に削除済みの id が再び使われ得る。
    ```bash
    # 適用前と適用後の両方で実行し、値が一致することを確認する
