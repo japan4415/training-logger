@@ -18,6 +18,7 @@
 import type { OAuthResourceAuth } from "@cloudflare/workers-oauth-provider";
 import { insufficientScope } from "@cloudflare/workers-oauth-provider";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { PHOTO_MAX_BASE64_CHARS } from "../db/session-photos.js";
 import { getUserAccess } from "../db/users.js";
 import type { Bindings } from "../env.js";
 import type { McpContext } from "../mcp/context.js";
@@ -45,6 +46,23 @@ const BASELINE_SCOPES = ["mcp:read", "mcp:write"] as const;
 function hasBaselineScope(scope: readonly string[]): boolean {
 	return BASELINE_SCOPES.some((required) => scope.includes(required));
 }
+
+/**
+ * JSON-RPC のエンベロープと `date` / `content_type` などの引数に許容する余裕。
+ * 写真本体（base64）に上乗せする分だけを見積もる。
+ */
+const MCP_REQUEST_BODY_SLACK_BYTES = 256 * 1024;
+
+/**
+ * `/mcp` のリクエストボディ上限（バイト）。
+ *
+ * MCP SDK 1.31.0 以降の Streamable HTTP transport はボディ上限を持ち、既定値は
+ * 4 MiB である。`upload_session_photo` は最大 10 MiB の写真を base64（約 14 MB）で
+ * 受け取るため、既定値のままでは最大サイズの写真が transport 層で 413 になる。
+ * ツール層の上限（`PHOTO_MAX_BASE64_CHARS`）にエンベロープ分を足した値を渡す。
+ */
+const MCP_MAX_REQUEST_BODY_BYTES =
+	PHOTO_MAX_BASE64_CHARS + MCP_REQUEST_BODY_SLACK_BYTES;
 
 function jsonError(status: number, error: string): Response {
 	return new Response(JSON.stringify({ error }), {
@@ -107,6 +125,7 @@ async function handleMcpRequest(
 	try {
 		const transport = new WebStandardStreamableHTTPServerTransport({
 			enableJsonResponse: true,
+			maxRequestBodySize: MCP_MAX_REQUEST_BODY_BYTES,
 		});
 		const server = createMcpServer(env, ctx);
 		await server.connect(transport);
