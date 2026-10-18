@@ -1,6 +1,6 @@
 # マイグレーション運用手順
 
-Cloudflare D1 のマイグレーションは `cf d1 migrations` コマンドで管理する。`wrangler d1 migrations` も同じ `migrations/` と同じ `d1_migrations` テーブルを扱うため併用できるが、通常は cf を使う（cf に `d1 export` / ローカル `d1 query` が無いため、退避とリハーサルだけは wrangler を使う）。
+Cloudflare D1 のマイグレーションは `cf d1 migrations` コマンドで管理する。`wrangler d1 migrations` も同じ `migrations/` と同じ `d1_migrations` テーブルを扱うため併用できるが、通常は cf を使う（cf に `d1 export` / ローカル `d1 query` が無いため、退避とリハーサルだけは wrangler を使う。理由の一覧は [docs/deployment.md の「cf と wrangler の役割分担」](../docs/deployment.md#cf-と-wrangler-の役割分担)）。
 
 ## ファイル命名規則
 

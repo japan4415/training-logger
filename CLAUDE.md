@@ -37,7 +37,7 @@ pnpm exec cf d1 migrations create <name>            # マイグレーション�
 - ORM は不使用。D1 の SQLite 方言に対して SQL を直接記述する
 - テストは `test/` 以下に配置。`@cloudflare/vitest-pool-workers` で D1 バインディングを使用する
 - Web / REST / DB のユーザーデータ操作は内部 `users.id` を必須にする（外部 IdP の `sub` を DB 層へ渡さない）。他ユーザーの行は 404 として扱う
-- デプロイと D1 マイグレーションは `cf`（`cloudflare.config.ts` + `wrangler.config.ts`）。`wrangler.jsonc` は vitest-pool-workers / `wrangler dev` / `wrangler secret` / D1 の export・execute 用に残し、両者の一致は `test/deploy-config.test.ts` が検査する
+- デプロイと D1 マイグレーションは `cf`（`cloudflare.config.ts` + `wrangler.config.ts`）。`wrangler.jsonc` は vitest-pool-workers / `wrangler dev` / `wrangler tail` / `wrangler secret` / `wrangler versions deploy` / D1 の export・execute 用に残し（理由の一覧は [docs/deployment.md の「cf と wrangler の役割分担」](docs/deployment.md#cf-と-wrangler-の役割分担)）、両者の一致は `test/deploy-config.test.ts` が検査する
 - 認証は Web / REST が Cloudflare Access（`src/security/`）、MCP が OAuth 2.1（`src/oauth/`）。上流 IdP は Access に統一する
 
 ## ディレクトリ構成

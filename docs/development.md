@@ -7,7 +7,7 @@
 - Node.js 22 または 24 LTS（CI は 22）
 - pnpm（`corepack enable` で有効化。本リポジトリは `packageManager: pnpm@10.34.6` を指定しており corepack が該当版を取得する。corepack が同梱されない Node.js 25 以降では `npm install -g corepack` を先に実行する）
 - wrangler（`pnpm` 経由でプロジェクトローカルにインストールされる。コマンドは `pnpm exec wrangler` で固定版を使う）
-- cf（Cloudflare CLI。同じくプロジェクトローカルに入る。デプロイと D1 マイグレーションは cf を使う。[docs/deployment.md](deployment.md#cloudflareconfigtsデプロイ設定) を参照）
+- cf（Cloudflare CLI。同じくプロジェクトローカルに入る。デプロイと D1 マイグレーションは cf を使う。wrangler に残した操作の一覧は [docs/deployment.md](deployment.md#cf-と-wrangler-の役割分担) を参照）
 
 ### セットアップ
 
