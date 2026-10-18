@@ -59,7 +59,7 @@ graph LR
 git clone https://github.com/japan4415/training-logger.git
 cd training-logger
 pnpm install
-pnpm exec wrangler d1 migrations apply training-logger-db --local
+pnpm run db:migrate:local
 pnpm run dev
 ```
 

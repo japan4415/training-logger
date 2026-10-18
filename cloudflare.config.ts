@@ -35,10 +35,9 @@ export default defineConfig({
 		// wrangler の `routes[].custom_domain: true` に対応する。
 		domains: ["training-logger.discord.jp"],
 		// D1 の `migrations_dir` は cf の設定に無い（cf migrate の既知の follow-up）。
-		// マイグレーションは従来どおり wrangler で適用する:
-		//   pnpm exec wrangler d1 migrations apply training-logger-db --remote
-		// cf で適用する場合は `cf d1 migrations apply <DATABASE_ID> --dir migrations`
-		//（cf は --remote 相当のリモート適用が既定）。
+		// 適用先は cf 側の設定ではなくコマンドで指定する:
+		//   本番: pnpm run db:migrate
+		//   ローカル: pnpm run db:migrate:local（--persist-to .wrangler/state で wrangler dev と共有）
 		env: {
 			DB: bindings.d1({
 				name: "training-logger-db",

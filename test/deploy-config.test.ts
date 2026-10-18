@@ -1,9 +1,10 @@
 // `cf build` / `cf deploy` が読む cloudflare.config.ts・wrangler.config.ts と、
-// vitest-pool-workers・`wrangler dev`・D1 マイグレーションが読む wrangler.jsonc の
-// drift を止めるテスト。cf は wrangler.jsonc を読まず、wrangler は cloudflare.config.ts を
-// 読まないため、片側だけ更新するとローカルと本番で挙動がずれる。
+// vitest-pool-workers・`wrangler dev` が読む wrangler.jsonc、および D1 マイグレーションを
+// 実行する package.json スクリプトの drift を止めるテスト。cf は wrangler.jsonc を読まず、
+// wrangler は cloudflare.config.ts を読まないため、片側だけ更新するとローカルと本番でずれる。
 import { describe, expect, it } from "vitest";
 import cloudflareConfig from "../cloudflare.config";
+import packageJsonRaw from "../package.json?raw";
 import wranglerConfig from "../wrangler.config";
 import wranglerJsonc from "../wrangler.jsonc?raw";
 
@@ -19,6 +20,7 @@ type WranglerJsonc = {
 		binding: string;
 		database_name: string;
 		database_id: string;
+		migrations_dir: string;
 	}[];
 	r2_buckets: { binding: string; bucket_name: string }[];
 	kv_namespaces: { binding: string; id: string }[];
@@ -38,6 +40,9 @@ function parseWranglerJsonc(text: string): WranglerJsonc {
 type BindingView = { type: string; id?: string; name?: string };
 
 const wrangler = parseWranglerJsonc(wranglerJsonc);
+const scripts = (
+	JSON.parse(packageJsonRaw) as { scripts: Record<string, string> }
+).scripts;
 const worker = cloudflareConfig.worker;
 const env = worker.env as unknown as Record<string, BindingView>;
 
@@ -106,5 +111,21 @@ describe("deploy configuration", () => {
 
 	it("builds the same static assets directory", () => {
 		expect(wranglerConfig.assetsDirectory).toBe(wrangler.assets.directory);
+	});
+
+	it("runs D1 migrations against the same database and directory as wrangler.jsonc", () => {
+		const database = wrangler.d1_databases[0];
+
+		for (const name of ["db:migrate", "db:migrate:local"]) {
+			expect(scripts[name]).toContain(database.database_id);
+			expect(scripts[name]).toContain(`--dir ${database.migrations_dir}`);
+		}
+
+		// ローカル適用は wrangler dev が読む state を共有し、本番適用は cf の既定（リモート）を使う。
+		expect(scripts["db:migrate:local"]).toContain("--local");
+		expect(scripts["db:migrate:local"]).toContain(
+			"--persist-to .wrangler/state",
+		);
+		expect(scripts["db:migrate"]).not.toContain("--local");
 	});
 });

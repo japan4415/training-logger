@@ -11,6 +11,8 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "build:skill": "node scripts/build-skill.mjs",
+    "db:migrate": "cf d1 migrations apply fed11dc7-680c-4245-a3db-95e73f4ddebe --dir migrations",
+    "db:migrate:local": "cf d1 migrations apply fed11dc7-680c-4245-a3db-95e73f4ddebe --local --dir migrations --persist-to .wrangler/state",
     "test": "vitest run"
   },
   "packageManager": "pnpm@10.34.6",

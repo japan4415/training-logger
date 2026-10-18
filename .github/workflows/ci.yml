@@ -27,6 +27,6 @@ jobs:
       - run: pnpm run lint
 
       - name: Validate D1 migrations
-        run: pnpm exec wrangler d1 migrations apply training-logger-db --local
+        run: pnpm run db:migrate:local
 
       - run: pnpm run test

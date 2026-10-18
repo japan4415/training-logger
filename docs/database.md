@@ -543,7 +543,7 @@ UNIQUE 制約自体が NOCASE であるため、大文字小文字違いの重�
 
 ## マイグレーション管理
 
-Cloudflare D1 のマイグレーションは `wrangler d1 migrations` コマンドで管理する。
+Cloudflare D1 のマイグレーションは `cf d1 migrations` コマンドで管理する（`wrangler d1 migrations` も同じファイルを扱える）。
 
 ### ファイル配置
 
@@ -560,13 +560,16 @@ migrations/
 
 | 操作 | コマンド |
 |---|---|
-| 新規マイグレーション作成 | `pnpm exec wrangler d1 migrations create training-logger-db <name>` |
-| ローカル適用（開発） | `pnpm exec wrangler d1 migrations apply training-logger-db --local` |
-| リモート適用（本番） | `pnpm exec wrangler d1 migrations apply training-logger-db --remote` |
+| 新規マイグレーション作成 | `pnpm exec cf d1 migrations create <name>` |
+| ローカル適用（開発） | `pnpm run db:migrate:local` |
+| リモート適用（本番） | `pnpm run db:migrate` |
+| 未適用の確認 | `pnpm exec cf d1 migrations list fed11dc7-680c-4245-a3db-95e73f4ddebe` |
+
+cf は DB 名ではなく database ID を取る（ID は `wrangler.jsonc`・`cloudflare.config.ts` と同じ値で、`package.json` のスクリプトに埋め込んである）。
 
 ### CI での構文検証
 
-CI パイプラインでは `pnpm exec wrangler d1 migrations apply training-logger-db --local` を実行してマイグレーション SQL の構文を検証する。詳細は [デプロイメント](./deployment.md) を参照。
+CI パイプラインでは `pnpm run db:migrate:local` を実行してマイグレーション SQL の構文を検証する（`--local` は資格情報なしで動くため CI にシークレットは不要）。詳細は [デプロイメント](./deployment.md) を参照。
 
 ## データマッピング検証
 
