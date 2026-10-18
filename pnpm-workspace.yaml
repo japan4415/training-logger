@@ -1,0 +1,11 @@
+# pnpm の設定は pnpm 11 以降 pnpm-workspace.yaml に置く（package.json の "pnpm"
+# フィールドは読まれない）。ビルドスクリプトの実行を許可する依存だけを列挙する
+# （pnpm 11 で onlyBuiltDependencies から allowBuilds へ移行した）。
+allowBuilds:
+  esbuild: true
+  workerd: true
+
+# @cloudflare/workers-types は日付ベースで毎日公開される型定義のみのパッケージで、
+# 24 時間の公開間隔ゲート（既定 minimumReleaseAge）に常時かかるため除外する。
+minimumReleaseAgeExclude:
+  - '@cloudflare/workers-types'
