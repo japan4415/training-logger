@@ -22,6 +22,7 @@ pnpm run dev                                        # ローカル開発サー�
 pnpm run typecheck                                  # TypeScript 型チェック
 pnpm run lint                                       # Biome lint
 pnpm run test                                       # Vitest テスト実行
+pnpm run deploy                                     # 本番デプロイ (cf deploy。検証は cf deploy --dry-run)
 pnpm exec wrangler d1 migrations apply training-logger-db --local  # ローカル D1 マイグレーション
 ```
 
@@ -35,6 +36,7 @@ pnpm exec wrangler d1 migrations apply training-logger-db --local  # ローカ�
 - ORM は不使用。D1 の SQLite 方言に対して SQL を直接記述する
 - テストは `test/` 以下に配置。`@cloudflare/vitest-pool-workers` で D1 バインディングを使用する
 - Web / REST / DB のユーザーデータ操作は内部 `users.id` を必須にする（外部 IdP の `sub` を DB 層へ渡さない）。他ユーザーの行は 404 として扱う
+- デプロイは `cf`（`cloudflare.config.ts` + `wrangler.config.ts`）。`wrangler.jsonc` は vitest-pool-workers / `wrangler dev` / D1 マイグレーション用に残し、両者の一致は `test/deploy-config.test.ts` が検査する
 - 認証は Web / REST が Cloudflare Access（`src/security/`）、MCP が OAuth 2.1（`src/oauth/`）。上流 IdP は Access に統一する
 
 ## ディレクトリ構成
