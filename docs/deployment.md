@@ -64,9 +64,31 @@
 
 `workers_dev: false` により `https://<worker>.<account>.workers.dev` は無効化済みで、配信経路は custom domain のみに限定する。Cloudflare Access を設定するとホスト全体を deny-by-default で保護でき、Worker 側にも同じ方針の認証ミドルウェアがある。`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が未設定の場合、公開パス以外は 401 `access_not_configured` を返す（fail-closed）。`OAUTH_KV` の id が未置換だとデプロイできない。
 
+## cloudflare.config.ts（デプロイ設定）
+
+デプロイは `cf` CLI で行う（`pnpm run deploy` = `cf deploy`）。`cf build` / `cf deploy` は `wrangler.jsonc` を読まず、リポジトリ直下の `cloudflare.config.ts`（Programmatic configuration、open beta）を読む。`wrangler.jsonc` は次の用途で残している。
+
+- `@cloudflare/vitest-pool-workers`（wrangler 形式の config しか受け付けない）
+- `wrangler dev` / `wrangler tail`
+- D1 マイグレーションの適用（`migrations_dir` は cf 側に項目が無い）
+
+| 設定 | 置き場所 |
+|---|---|
+| Worker 名・互換日付/フラグ・binding・custom domain・observability・`workers_dev` | `cloudflare.config.ts` |
+| 静的アセットのディレクトリ（`./public`） | `wrangler.config.ts`（Wrangler bundler のビルド設定） |
+| D1 の `migrations_dir` | `wrangler.jsonc` |
+
+両者が同じ Worker を定義していることは `test/deploy-config.test.ts` が検査する。片側だけ変更すると `pnpm run test` が落ちる。
+
+```bash
+pnpm exec cf build              # .cloudflare/output/ に Build Output を作る
+pnpm exec cf deploy --dry-run   # ビルドと検証のみ（アップロードしない・資格情報不要）
+pnpm exec cf deploy             # ビルドして本番へ反映
+```
+
 ## 初期構築手順
 
-> **`main` へのマージで自動デプロイされる点に注意**: CD は `main` への push を検知して自動デプロイする（末尾の「CI/CD」節を参照）。手順 3〜7 のうち、KV の id 反映・`0005` の本番適用・Access ポリシー・オーナーの紐付けは**PR のマージ前に**終えておく。KV の id が未置換のまま、または `0005` 未適用・オーナー未紐付けでマージすると、デプロイが失敗するかオーナーが `403 user_not_registered` でロックアウトする。**シークレット（手順 5）だけは例外**で、Workers Builds が PR ブランチのプレビュー版をアップロードしている間は `wrangler secret put` が拒否されるうえ、入れた secret は未デプロイの版になる。マージ後の自動デプロイが終わってから `secret put` し、`wrangler versions list` で "Updated secret" の版を確認して `wrangler versions deploy <id> -y` で反映する。この間（数分）は Web が 401、同意画面が 503 で止まる（fail-closed）。
+> **`main` へのマージで自動デプロイされる点に注意**: CD は `main` への push を検知して自動デプロイする（末尾の「CI/CD」節を参照）。手順 3〜7 のうち、KV の id 反映・`0005` の本番適用・Access ポリシー・オーナーの紐付けは**PR のマージ前に**終えておく。KV の id が未置換のまま、または `0005` 未適用・オーナー未紐付けでマージすると、デプロイが失敗するかオーナーが `403 user_not_registered` でロックアウトする。**シークレット（手順 5）だけは例外**で、Workers Builds が PR ブランチのプレビュー版をアップロードしている間は `wrangler secret put` が拒否されるうえ、入れた secret は未デプロイの版になる（cf は単一 secret の設定に未対応のため、secret 操作は wrangler のまま）。マージ後の自動デプロイが終わってから `secret put` し、`wrangler versions list` で "Updated secret" の版を確認して `wrangler versions deploy <id> -y` で反映する。この間（数分）は Web が 401、同意画面が 503 で止まる（fail-closed）。
 
 ### 1. D1 データベースの作成
 
@@ -173,8 +195,11 @@ Zero Trust で custom domain を対象とした Self-hosted application を作�
 ### 8. デプロイ
 
 ```bash
-pnpm exec wrangler deploy
+pnpm exec cf deploy             # ビルドして本番へ反映（= pnpm run deploy）
+pnpm exec cf deploy --dry-run   # アップロードせずビルドと検証だけ行う
 ```
+
+`cf deploy` は `cloudflare.config.ts` を読んで Wrangler bundler でビルドし、Build Output（`.cloudflare/output/v0/`）をアップロードする。secret の設定は cf が単一 secret に未対応のため、引き続き wrangler を使う（手順 5）。
 
 `pnpm exec wrangler versions deploy` を使用する場合、secret や KV binding を追加した後は、対象バージョンの binding に新しい値が含まれることを確認してからデプロイする。古いバージョンをそのまま指定すると、追加した Access 設定や `OAUTH_KV` が反映されず 401 や OAuth エラーになる。
 
@@ -196,7 +221,7 @@ PR を `main` にマージすると Workers Builds が自動でビルド・デ�
 
 本番環境（production）のみ運用する。個人利用のため preview 環境を設ける利益が薄い。
 
-- **本番**: `pnpm exec wrangler deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `pnpm exec wrangler secret put` で設定
+- **本番**: `pnpm exec cf deploy` でデプロイ。D1 は `training-logger-db`（リモート）。シークレットは `pnpm exec wrangler secret put` で設定（cf は単一 secret の設定に未対応）
 - **ローカル開発**: `wrangler dev` で起動。D1・R2・KV binding はローカルでエミュレートされる。マイグレーション適用は `pnpm exec wrangler d1 migrations apply training-logger-db --local`。Web / REST の動作確認では `.dev.vars` に `PHOTO_UPLOAD_ALLOW_UNAUTHENTICATED=1` を設定する（未設定だと認証必須のパスは 401 `access_not_configured`）。このフラグはリクエスト先 Host が `localhost` または `127.0.0.1`（ポート付き可）の場合だけ有効で、それ以外では無視して 401 を返す。本番ではこの変数を設定しない。書き込み系リクエストは `Sec-Fetch-Site` が `same-origin` または `none` の場合だけ受け付け、ヘッダー欠如時も 403 を返す。その他のシークレットや環境変数も `.dev.vars`（`.dev.vars.example` 参照）に設定する
 
 ## ユーザーの無効化とトークン失効
@@ -291,7 +316,22 @@ jobs:
 
 Cloudflare Workers Builds（Git 連携）により、`main` ブランチへの push 時に自動デプロイが実行される。GitHub Actions の `deploy.yml` は使用しない。
 
-Cloudflare ダッシュボードで GitHub リポジトリを連携すると、`main` への push を検知して自動的にビルド・デプロイが行われる。現行のWorkers Builds設定はD1マイグレーションを自動適用しない。DB変更を含むPRでは、本番の `pnpm exec wrangler d1 migrations apply training-logger-db --remote` をデプロイ前に実行し、適用履歴を確認する（[運用手順](../migrations/README.md)）。ビルド成功だけではDB移行の完了を意味しない。
+ビルド・デプロイのコマンドは Cloudflare 側の設定でリポジトリ内には無く、`cf builds` で参照・変更できる（`--external-script-id` は Worker 名ではなく Worker ID）。
+
+```bash
+cf workers list | jq -r '.[] | select(.name == "training-logger") | .id'  # script-tag
+cf builds workers get <script-tag>                                       # build / deploy command
+cf builds triggers list --external-script-id <script-tag>                # ブランチ条件
+cf builds list --external-script-id <script-tag>                         # 直近のビルド
+cf builds logs get <build-uuid>                                          # 失敗時のログ
+```
+
+| トリガー | build command | deploy command |
+|---|---|---|
+| `main` | `npx cf build` | `npx cf deploy --prebuilt` |
+| `main` 以外 | `npx cf build` | `npx cf workers versions create --prebuilt` |
+
+現行の Workers Builds 設定は D1 マイグレーションを自動適用しない。DB 変更を含む PR では、本番の `pnpm exec wrangler d1 migrations apply training-logger-db --remote` をデプロイ前に実行し、適用履歴を確認する（[運用手順](../migrations/README.md)）。ビルド成功だけでは DB 移行の完了を意味しない。
 
 ## バックアップ
 

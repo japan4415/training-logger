@@ -51,6 +51,8 @@ pnpm exec wrangler d1 migrations apply training-logger-db --remote
 
 本番の D1 データベースに適用される。デプロイは Cloudflare Workers Builds (Git 連携) で行われるが、Workers Builds は Worker のビルド・デプロイのみを行い D1 マイグレーションの自動適用は行わないため、リモート DB へのマイグレーション適用は手動で実行する必要がある。将来的に自動化する場合は別途検討する。
 
+cf で適用する場合は `pnpm exec cf d1 migrations apply <DATABASE_ID> --dir migrations` を使う（cf はリモート適用が既定で、`migrations_dir` は `cloudflare.config.ts` に書けない）。
+
 ## CI での構文検証
 
 CI パイプライン (`ci.yml`) の PR チェックで `pnpm exec wrangler d1 migrations apply training-logger-db --local` を実行し、マイグレーション SQL の構文を検証する。構文エラーがあると CI が失敗し、マージがブロックされる。

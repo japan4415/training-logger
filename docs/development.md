@@ -7,6 +7,7 @@
 - Node.js 22 または 24 LTS（CI は 22）
 - pnpm（`corepack enable` で有効化。本リポジトリは `packageManager: pnpm@10.34.6` を指定しており corepack が該当版を取得する。corepack が同梱されない Node.js 25 以降では `npm install -g corepack` を先に実行する）
 - wrangler（`pnpm` 経由でプロジェクトローカルにインストールされる。コマンドは `pnpm exec wrangler` で固定版を使う）
+- cf（Cloudflare CLI。同じくプロジェクトローカルに入る。デプロイは `pnpm exec cf deploy` で行う。[docs/deployment.md](deployment.md#cloudflareconfigtsデプロイ設定) を参照）
 
 ### セットアップ
 
@@ -37,7 +38,8 @@ cp .dev.vars.example .dev.vars
 | スクリプト | コマンド | 説明 |
 |------------|----------|------|
 | `dev` | `wrangler dev` | ローカル開発サーバの起動 |
-| `deploy` | `wrangler deploy` | 本番環境へのデプロイ |
+| `build` | `cf build` | Build Output（`.cloudflare/output/`）の生成 |
+| `deploy` | `cf deploy` | 本番環境へのデプロイ（検証は `cf deploy --dry-run`） |
 | `typecheck` | `tsc --noEmit` | TypeScript 型チェック |
 | `lint` | `biome check .` | Biome による lint チェック |
 | `format` | `biome format --write .` | Biome によるフォーマット |

@@ -4,6 +4,9 @@ node_modules/
 # Wrangler
 .wrangler/
 
+# Cloudflare CLI（cf build の Build Output とローカル状態）
+.cloudflare/
+
 # Build output
 dist/
 
