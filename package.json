@@ -15,7 +15,7 @@
     "db:migrate:local": "cf d1 migrations apply fed11dc7-680c-4245-a3db-95e73f4ddebe --local --dir migrations --persist-to .wrangler/state",
     "test": "vitest run"
   },
-  "packageManager": "pnpm@12.14.0",
+  "packageManager": "pnpm@12.15.0",
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^1.2.2",
     "@modelcontextprotocol/sdk": "^1.30.0",
