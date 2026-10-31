@@ -233,7 +233,7 @@ erDiagram
 
 > **所有境界**: `session_exercises` / `sets` / `session_photos` は `user_id` を持たず、所有境界は親 `workout_sessions.user_id` に一本化する。子テーブルへの ID 直指定の更新・削除は、必ず親セッションの所有を検証してから行う。
 
-> **現状の制約**: `updated_at` は「更新日時」と定義しているが、同日再記録時にメタデータ（`goal` / `body_condition` / `notes`）を更新する `updateSession` は `updated_at` を書き換えない。DB 層で `updated_at` を更新するのは `set_exercise_muscles` による `exercises.updated_at` だけである。
+> **`updated_at` の更新**: セッションのメタデータ（`goal` / `body_condition` / `notes`）の更新と、セッションに属する種目・セット・写真の追加・変更・削除で更新する。子テーブルの変更は、親セッションの所有を検証したうえで `workout_sessions.updated_at` を更新する。
 
 ### session_photos (セッション写真)
 

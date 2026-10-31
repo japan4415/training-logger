@@ -1,5 +1,5 @@
 import type { Bindings } from "../env.js";
-import { assertSessionOwned } from "./sessions.js";
+import { assertSessionOwned, touchSession } from "./sessions.js";
 import type { SessionPhotoRow } from "./types.js";
 
 export const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
@@ -87,7 +87,7 @@ async function deleteSessionPhotoMetadata(
 	sessionId: number,
 	photoId: string,
 ): Promise<void> {
-	await db
+	const result = await db
 		.prepare(
 			`DELETE FROM session_photos
 			 WHERE session_id = ? AND id = ?
@@ -95,6 +95,9 @@ async function deleteSessionPhotoMetadata(
 		)
 		.bind(sessionId, photoId, userId)
 		.run();
+	if (result.meta.changes > 0) {
+		await touchSession(db, userId, sessionId);
+	}
 }
 
 /** Remove metadata for objects already missing from R2 and return usable photos. */
@@ -226,6 +229,8 @@ export async function storeSessionPhoto(
 		throw error;
 	}
 
+	await touchSession(env.DB, userId, session.id);
+
 	const photo = await getSessionPhoto(env.DB, userId, session.id, id);
 	if (!photo) {
 		await compensateR2Put(env.PHOTOS, r2Key, "stored row could not be read");
@@ -250,6 +255,9 @@ export async function deleteSessionPhoto(
 	)
 		.bind(sessionId, photoId, userId)
 		.run();
+	if (result.meta.changes > 0) {
+		await touchSession(env.DB, userId, sessionId);
+	}
 	return result.meta.changes > 0;
 }
 

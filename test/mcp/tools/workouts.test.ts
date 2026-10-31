@@ -9,7 +9,12 @@ import {
 	logWorkoutHandler,
 	updateWorkoutHandler,
 } from "../../../src/mcp/tools/workouts.js";
-import { applyMigrations, cleanDatabase } from "../../db/test-helpers.js";
+import {
+	applyMigrations,
+	cleanDatabase,
+	getSessionUpdatedAt,
+	setSessionUpdatedAt,
+} from "../../db/test-helpers.js";
 
 describe("workout tools", () => {
 	beforeAll(async () => {
@@ -82,6 +87,34 @@ describe("workout tools", () => {
 				.all();
 
 			expect(sessionExercises).toHaveLength(2);
+		});
+
+		it("should update session updated_at when appending to an existing session", async () => {
+			const PAST = "2000-01-01T00:00:00Z";
+			const first = await logWorkoutHandler(env, 1, {
+				date: "2026-08-15",
+				exercises: [
+					{
+						name: "ベンチプレス",
+						sets: [{ reps: 10, weight: 60, weight_unit: "kg" }],
+					},
+				],
+			});
+			await setSessionUpdatedAt(env.DB, first.session_id, PAST);
+
+			await logWorkoutHandler(env, 1, {
+				date: "2026-08-15",
+				exercises: [
+					{
+						name: "スクワット",
+						sets: [{ reps: 10, weight: 80, weight_unit: "kg" }],
+					},
+				],
+			});
+
+			expect(await getSessionUpdatedAt(env.DB, first.session_id)).not.toBe(
+				PAST,
+			);
 		});
 
 		it("should auto-register unknown exercises as strength by default", async () => {
@@ -388,6 +421,30 @@ describe("workout tools", () => {
 			expect(result.updated_fields).toContain("equipment_note");
 			expect(result.updated_fields).toContain("form_cues");
 			expect(result.sets_replaced).toBe(false);
+		});
+
+		it("should update session updated_at when exercise metadata changes", async () => {
+			const PAST = "2000-01-01T00:00:00Z";
+			const logged = await logWorkoutHandler(env, 1, {
+				date: "2026-08-15",
+				exercises: [
+					{
+						name: "ベンチプレス",
+						sets: [{ reps: 10, weight: 60, weight_unit: "kg" }],
+					},
+				],
+			});
+			await setSessionUpdatedAt(env.DB, logged.session_id, PAST);
+
+			await updateWorkoutHandler(env, 1, {
+				date: "2026-08-15",
+				exercise_name: "ベンチプレス",
+				equipment_note: "バーベル",
+			});
+
+			expect(await getSessionUpdatedAt(env.DB, logged.session_id)).not.toBe(
+				PAST,
+			);
 		});
 
 		it("should replace sets when provided", async () => {

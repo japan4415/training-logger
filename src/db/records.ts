@@ -1,4 +1,9 @@
-import { assertSessionOwned } from "./sessions.js";
+import {
+	assertSessionOwned,
+	touchSession,
+	touchSessionForSessionExercise,
+	touchSessionForSessionExerciseStatement,
+} from "./sessions.js";
 import type { SessionExerciseRow, SetRow } from "./types.js";
 
 /** Input for creating or replacing a set */
@@ -77,6 +82,8 @@ export async function createSessionExercise(
 		.first<SessionExerciseRow>();
 	if (!inserted) throw new Error("Failed to retrieve created session exercise");
 
+	await touchSession(db, userId, sessionId);
+
 	return inserted;
 }
 
@@ -125,6 +132,8 @@ export async function updateSessionExercise(
 		.bind(status, equipmentNote, formCues, notes, id, userId)
 		.run();
 
+	await touchSessionForSessionExercise(db, userId, id);
+
 	return db
 		.prepare(
 			`SELECT se.* FROM session_exercises se
@@ -144,6 +153,16 @@ export async function deleteSessionExercise(
 	userId: number,
 	id: number,
 ): Promise<boolean> {
+	const existing = await db
+		.prepare(
+			`SELECT se.session_id FROM session_exercises se
+			 JOIN workout_sessions ws ON se.session_id = ws.id
+			 WHERE se.id = ? AND ws.user_id = ?`,
+		)
+		.bind(id, userId)
+		.first<{ session_id: number }>();
+	if (!existing) return false;
+
 	const result = await db
 		.prepare(
 			`DELETE FROM session_exercises
@@ -152,6 +171,9 @@ export async function deleteSessionExercise(
 		)
 		.bind(id, userId)
 		.run();
+	if (result.meta.changes > 0) {
+		await touchSession(db, userId, existing.session_id);
+	}
 	return result.meta.changes > 0;
 }
 
@@ -248,6 +270,8 @@ export async function createSet(
 		.first<SetRow>();
 	if (!inserted) throw new Error("Failed to retrieve created set");
 
+	await touchSessionForSessionExercise(db, userId, sessionExerciseId);
+
 	return inserted;
 }
 
@@ -313,6 +337,10 @@ export async function replaceSets(
 		);
 	}
 
+	statements.push(
+		touchSessionForSessionExerciseStatement(db, userId, sessionExerciseId),
+	);
+
 	await db.batch(statements);
 
 	// Return all inserted sets ordered by is_planned, set_order
@@ -334,7 +362,7 @@ export async function deleteSetsBySessionExercise(
 	userId: number,
 	sessionExerciseId: number,
 ): Promise<void> {
-	await db
+	const result = await db
 		.prepare(
 			`DELETE FROM sets
 			 WHERE session_exercise_id = ?
@@ -346,4 +374,7 @@ export async function deleteSetsBySessionExercise(
 		)
 		.bind(sessionExerciseId, userId)
 		.run();
+	if (result.meta.changes > 0) {
+		await touchSessionForSessionExercise(db, userId, sessionExerciseId);
+	}
 }

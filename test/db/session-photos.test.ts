@@ -8,7 +8,12 @@ import {
 	storeSessionPhoto,
 } from "../../src/db/session-photos.js";
 import { deleteSession, getOrCreateSession } from "../../src/db/sessions.js";
-import { applyMigrations, cleanDatabase } from "./test-helpers.js";
+import {
+	applyMigrations,
+	cleanDatabase,
+	getSessionUpdatedAt,
+	setSessionUpdatedAt,
+} from "./test-helpers.js";
 
 const IMAGES = {
 	jpeg: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
@@ -212,6 +217,24 @@ describe("session photos DB service", () => {
 		);
 		expect(await env.PHOTOS.get(stored.photo.r2_key)).toBeNull();
 		expect(await listSessionPhotos(env.DB, 1, session.id)).toHaveLength(0);
+	});
+
+	it("touches the session updated_at when a photo is stored or deleted", async () => {
+		const PAST = "2000-01-01T00:00:00Z";
+		const { session } = await getOrCreateSession(env.DB, 1, {
+			sessionDate: "2026-09-14",
+		});
+		await setSessionUpdatedAt(env.DB, session.id, PAST);
+
+		const stored = await storeSessionPhoto(env, 1, session, IMAGES.png);
+		if (!stored.ok) throw new Error(stored.error);
+		expect(await getSessionUpdatedAt(env.DB, session.id)).not.toBe(PAST);
+
+		await setSessionUpdatedAt(env.DB, session.id, PAST);
+		expect(await deleteSessionPhoto(env, 1, session.id, stored.photo.id)).toBe(
+			true,
+		);
+		expect(await getSessionUpdatedAt(env.DB, session.id)).not.toBe(PAST);
 	});
 
 	it("keeps photo metadata when a single-photo R2 deletion fails", async () => {
