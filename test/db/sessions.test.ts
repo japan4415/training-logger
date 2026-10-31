@@ -7,8 +7,14 @@ import {
 	getSessionByDate,
 	getSessionById,
 	getSessionsByMonth,
+	updateSession,
 } from "../../src/db/sessions.js";
-import { applyMigrations, cleanDatabase } from "./test-helpers.js";
+import {
+	applyMigrations,
+	cleanDatabase,
+	getSessionUpdatedAt,
+	setSessionUpdatedAt,
+} from "./test-helpers.js";
 
 describe("sessions", () => {
 	beforeAll(async () => {
@@ -145,6 +151,56 @@ describe("sessions", () => {
 			await getOrCreateSession(env.DB, 1, { sessionDate: "2026-08-15" });
 			const sessions = await getRecentSessions(env.DB, 1, 10);
 			expect(sessions).toHaveLength(1);
+		});
+	});
+
+	describe("updateSession", () => {
+		const PAST = "2000-01-01T00:00:00Z";
+
+		it("updates metadata and updated_at", async () => {
+			const { session } = await getOrCreateSession(env.DB, 1, {
+				sessionDate: "2026-08-15",
+			});
+			await setSessionUpdatedAt(env.DB, session.id, PAST);
+
+			await updateSession(env.DB, 1, session.id, {
+				goal: "筋力アップ",
+				bodyCondition: "良好",
+				notes: "更新メモ",
+			});
+
+			const updated = await getSessionById(env.DB, 1, session.id);
+			expect(updated?.goal).toBe("筋力アップ");
+			expect(updated?.body_condition).toBe("良好");
+			expect(updated?.notes).toBe("更新メモ");
+			expect(updated?.updated_at).not.toBe(PAST);
+			expect(updated?.updated_at).toMatch(
+				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+			);
+		});
+
+		it("does not change updated_at when no fields are provided", async () => {
+			const { session } = await getOrCreateSession(env.DB, 1, {
+				sessionDate: "2026-08-15",
+			});
+			await setSessionUpdatedAt(env.DB, session.id, PAST);
+
+			await updateSession(env.DB, 1, session.id, {});
+
+			expect(await getSessionUpdatedAt(env.DB, session.id)).toBe(PAST);
+		});
+
+		it("does not touch another user's session", async () => {
+			const { session } = await getOrCreateSession(env.DB, 1, {
+				sessionDate: "2026-08-15",
+			});
+			await setSessionUpdatedAt(env.DB, session.id, PAST);
+
+			await updateSession(env.DB, 2, session.id, { goal: "他人の更新" });
+
+			const unchanged = await getSessionById(env.DB, 1, session.id);
+			expect(unchanged?.goal).toBeNull();
+			expect(unchanged?.updated_at).toBe(PAST);
 		});
 	});
 

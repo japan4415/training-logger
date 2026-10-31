@@ -179,6 +179,7 @@ export async function updateSession(
 
 	if (updates.length === 0) return;
 
+	updates.push("updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')");
 	values.push(id, userId);
 	await db
 		.prepare(
@@ -186,6 +187,61 @@ export async function updateSession(
 		)
 		.bind(...values)
 		.run();
+}
+
+/**
+ * Update workout_sessions.updated_at for a session owned by the given user.
+ * Returns true when the session row was updated.
+ */
+export async function touchSession(
+	db: D1Database,
+	userId: number,
+	sessionId: number,
+): Promise<boolean> {
+	const result = await db
+		.prepare(
+			`UPDATE workout_sessions
+			 SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+			 WHERE id = ? AND user_id = ?`,
+		)
+		.bind(sessionId, userId)
+		.run();
+	return result.meta.changes > 0;
+}
+
+/**
+ * Prepared statement that updates the parent session's updated_at through a
+ * session_exercise row. The session_exercise must belong to the given user.
+ * Exposed as a statement so callers can include it in a db.batch().
+ */
+export function touchSessionForSessionExerciseStatement(
+	db: D1Database,
+	userId: number,
+	sessionExerciseId: number,
+): D1PreparedStatement {
+	return db
+		.prepare(
+			`UPDATE workout_sessions
+			 SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+			 WHERE id = (SELECT session_id FROM session_exercises WHERE id = ?)
+			   AND user_id = ?`,
+		)
+		.bind(sessionExerciseId, userId);
+}
+
+/**
+ * Update the parent session's updated_at through a session_exercise row.
+ */
+export async function touchSessionForSessionExercise(
+	db: D1Database,
+	userId: number,
+	sessionExerciseId: number,
+): Promise<void> {
+	await touchSessionForSessionExerciseStatement(
+		db,
+		userId,
+		sessionExerciseId,
+	).run();
 }
 
 /**

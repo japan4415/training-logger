@@ -141,3 +141,27 @@ export async function cleanDatabase(db: D1Database): Promise<void> {
 		),
 	]);
 }
+
+/** Set workout_sessions.updated_at to a fixed value for change detection tests. */
+export async function setSessionUpdatedAt(
+	db: D1Database,
+	sessionId: number,
+	value: string,
+): Promise<void> {
+	await db
+		.prepare("UPDATE workout_sessions SET updated_at = ? WHERE id = ?")
+		.bind(value, sessionId)
+		.run();
+}
+
+/** Read workout_sessions.updated_at for a session. */
+export async function getSessionUpdatedAt(
+	db: D1Database,
+	sessionId: number,
+): Promise<string | null> {
+	const row = await db
+		.prepare("SELECT updated_at FROM workout_sessions WHERE id = ?")
+		.bind(sessionId)
+		.first<{ updated_at: string }>();
+	return row?.updated_at ?? null;
+}

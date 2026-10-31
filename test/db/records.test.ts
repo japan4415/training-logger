@@ -10,7 +10,12 @@ import {
 	updateSessionExercise,
 } from "../../src/db/records.js";
 import { getOrCreateSession } from "../../src/db/sessions.js";
-import { applyMigrations, cleanDatabase } from "./test-helpers.js";
+import {
+	applyMigrations,
+	cleanDatabase,
+	getSessionUpdatedAt,
+	setSessionUpdatedAt,
+} from "./test-helpers.js";
 
 describe("records", () => {
 	let sessionId: number;
@@ -495,6 +500,57 @@ describe("records", () => {
 				.bind(se2.id)
 				.all();
 			expect(results).toHaveLength(1);
+		});
+	});
+
+	describe("session updated_at", () => {
+		const PAST = "2000-01-01T00:00:00Z";
+
+		it("touches the session when a session exercise is created or updated", async () => {
+			await setSessionUpdatedAt(env.DB, sessionId, PAST);
+			const se = await createSessionExercise(env.DB, 1, {
+				sessionId,
+				exerciseId,
+			});
+			expect(await getSessionUpdatedAt(env.DB, sessionId)).not.toBe(PAST);
+
+			await setSessionUpdatedAt(env.DB, sessionId, PAST);
+			await updateSessionExercise(env.DB, 1, se.id, { notes: "更新" });
+			expect(await getSessionUpdatedAt(env.DB, sessionId)).not.toBe(PAST);
+		});
+
+		it("touches the session when sets are created, replaced, or deleted", async () => {
+			const se = await createSessionExercise(env.DB, 1, {
+				sessionId,
+				exerciseId,
+			});
+
+			await setSessionUpdatedAt(env.DB, sessionId, PAST);
+			await createSet(env.DB, 1, {
+				sessionExerciseId: se.id,
+				setOrder: 1,
+				reps: 10,
+			});
+			expect(await getSessionUpdatedAt(env.DB, sessionId)).not.toBe(PAST);
+
+			await setSessionUpdatedAt(env.DB, sessionId, PAST);
+			await replaceSets(env.DB, 1, se.id, [{ reps: 8 }]);
+			expect(await getSessionUpdatedAt(env.DB, sessionId)).not.toBe(PAST);
+
+			await setSessionUpdatedAt(env.DB, sessionId, PAST);
+			await deleteSetsBySessionExercise(env.DB, 1, se.id);
+			expect(await getSessionUpdatedAt(env.DB, sessionId)).not.toBe(PAST);
+		});
+
+		it("touches the session when a session exercise is deleted", async () => {
+			const se = await createSessionExercise(env.DB, 1, {
+				sessionId,
+				exerciseId,
+			});
+			await setSessionUpdatedAt(env.DB, sessionId, PAST);
+
+			expect(await deleteSessionExercise(env.DB, 1, se.id)).toBe(true);
+			expect(await getSessionUpdatedAt(env.DB, sessionId)).not.toBe(PAST);
 		});
 	});
 });
