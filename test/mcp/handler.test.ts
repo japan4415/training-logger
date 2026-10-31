@@ -131,6 +131,7 @@ describe("MCP handler", () => {
 						name: string;
 						description: string;
 						inputSchema: Record<string, unknown>;
+						annotations?: { readOnlyHint?: boolean };
 					}>;
 				};
 			};
@@ -174,6 +175,44 @@ describe("MCP handler", () => {
 			expect(uploadTool?.inputSchema).not.toHaveProperty(
 				"properties.data_base64.maxLength",
 			);
+		});
+
+		it("tools/list marks only the read-only tools with readOnlyHint", async () => {
+			const response = await mcpFetch({
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json, text/event-stream",
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 4,
+					method: "tools/list",
+					params: {},
+				}),
+			});
+
+			expect(response.status).toBe(200);
+
+			const data = (await response.json()) as {
+				result: {
+					tools: Array<{
+						name: string;
+						annotations?: { readOnlyHint?: boolean };
+					}>;
+				};
+			};
+
+			const readOnlyTools = data.result.tools
+				.filter((tool) => tool.annotations?.readOnlyHint === true)
+				.map((tool) => tool.name)
+				.sort();
+
+			expect(readOnlyTools).toEqual([
+				"get_history",
+				"list_atlas_muscles",
+				"search_exercises",
+			]);
 		});
 
 		it("tools/call executes create_feedback and returns pre-filled URL when token is unset", async () => {
