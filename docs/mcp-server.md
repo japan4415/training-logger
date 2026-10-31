@@ -103,7 +103,7 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。た�
 }
 ```
 
-両方省略で全件取得。
+両方省略で全件取得。`readOnlyHint: true` が付く。
 
 **挙動**:
 
@@ -506,6 +506,8 @@ Hono ルート `POST /mcp` で JSON-RPC リクエストを受け付ける。た�
 }
 ```
 
+`readOnlyHint: true` が付く。
+
 **挙動**:
 
 - **種目指定**: その種目の履歴をセット付きで返す。「前回のシーテッドロウ何 kg?」のような質問に回答できる
@@ -806,7 +808,7 @@ https://training-logger.discord.jp/mcp
 **注意事項**:
 
 - 書き込みを伴うツール（`log_workout`, `update_workout`, `delete_workout`, `register_exercise`, `set_exercise_muscles`, `upload_session_photo`, `create_feedback`）は通常チャットで利用可能（実行前に確認あり）
-- Deep Research などの read-only モードで使えるツールはクライアントの判定に依存する。実装上 `readOnlyHint` を宣言しているのは `list_atlas_muscles` のみで、残り 10 ツール（`search_exercises` / `register_exercise` / `log_workout` / `update_workout` / `delete_workout` / `get_history` / `create_photo_upload_link` / `upload_session_photo` / `set_exercise_muscles` / `create_feedback`）には annotations が無い
+- Deep Research などの read-only モードで使えるツールはクライアントの判定に依存する。実装上 `readOnlyHint` を宣言しているのは `list_atlas_muscles` / `search_exercises` / `get_history` の 3 ツールで、残り 8 ツール（`register_exercise` / `log_workout` / `update_workout` / `delete_workout` / `create_photo_upload_link` / `upload_session_photo` / `set_exercise_muscles` / `create_feedback`）には annotations が無い
 - モバイルアプリからの MCP コネクタ利用は非対応
 - 添付画像の保存には `create_photo_upload_link` の URL をブラウザで開き、同じ画像を選択する
 

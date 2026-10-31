@@ -124,6 +124,7 @@ export function registerHistoryTools(
 		{
 			description:
 				"過去のワークアウト履歴を照会します。特定種目の前回の重量・回数の確認、期間指定の一覧、最近のセッション一覧に使えます。",
+			annotations: { readOnlyHint: true },
 			inputSchema: {
 				exercise_name: z
 					.string()

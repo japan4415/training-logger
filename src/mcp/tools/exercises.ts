@@ -255,6 +255,7 @@ export function registerExerciseTools(
 		{
 			description:
 				"登録済みの筋トレ種目を検索します。名前の部分一致、カテゴリで絞り込めます。新しい種目を登録する前に、既存の種目がないか必ず確認してください。",
+			annotations: { readOnlyHint: true },
 			inputSchema: {
 				query: z
 					.string()
